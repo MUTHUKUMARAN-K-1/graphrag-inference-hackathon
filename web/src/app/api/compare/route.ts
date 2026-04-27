@@ -1,16 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
+import { callLLM, PROVIDERS, type ProviderId } from "@/lib/llm-providers";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-// Initialize Anthropic client lazily
-async function getClaude() {
-  const Anthropic = (await import("@anthropic-ai/sdk")).default;
-  return new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-}
-
 interface CompareRequest {
   query: string;
+  provider?: ProviderId;
+  model?: string;
   adaptiveRouting?: boolean;
   topK?: number;
   hops?: number;
@@ -19,162 +16,153 @@ interface CompareRequest {
 export async function POST(req: NextRequest) {
   try {
     const body: CompareRequest = await req.json();
-    const { query, adaptiveRouting = true } = body;
+    const { query, provider = "anthropic", model, adaptiveRouting = true } = body;
 
     if (!query?.trim()) {
       return NextResponse.json({ error: "Query required" }, { status: 400 });
     }
 
-    const apiKey = process.env.ANTHROPIC_API_KEY;
-
-    // If no API key, return demo data
-    if (!apiKey) {
-      return NextResponse.json(getDemoResponse(query));
+    // Check if provider has API key (or is local)
+    const providerConfig = PROVIDERS[provider];
+    if (!providerConfig) {
+      return NextResponse.json({ error: `Unknown provider: ${provider}` }, { status: 400 });
     }
 
-    const claude = await getClaude();
+    const hasKey = providerConfig.isLocal || !providerConfig.requiresApiKey || !!process.env[providerConfig.apiKeyEnv];
+    if (!hasKey) {
+      return NextResponse.json(getDemoResponse(query, provider));
+    }
+
+    const selectedModel = model || providerConfig.defaultModel;
     const startTime = Date.now();
 
     // ── Pipeline A: Baseline RAG ────────────────────────
-    const baselineStart = Date.now();
-    const baselineMsg = await claude.messages.create({
-      model: "claude-sonnet-4-20250514",
-      max_tokens: 512,
-      system: "You are a helpful assistant. Answer the question accurately and concisely. If you don't have enough information, say so.",
-      messages: [{ role: "user", content: `Question: ${query}\n\nAnswer:` }],
+    const baselineResp = await callLLM({
+      provider,
+      model: selectedModel,
+      messages: [
+        { role: "system", content: "You are a helpful assistant. Answer the question accurately and concisely." },
+        { role: "user", content: `Question: ${query}\n\nAnswer:` },
+      ],
+      temperature: 0,
+      maxTokens: 512,
     });
-
-    const baselineText = baselineMsg.content[0].type === "text" ? baselineMsg.content[0].text : "";
-    const baselineLatency = Date.now() - baselineStart;
-    const baselineCost =
-      (baselineMsg.usage.input_tokens / 1000) * 0.003 +
-      (baselineMsg.usage.output_tokens / 1000) * 0.015;
 
     // ── Pipeline B: GraphRAG ────────────────────────────
-    const graphragStart = Date.now();
-
-    // Step 1: Extract keywords
-    const kwMsg = await claude.messages.create({
-      model: "claude-sonnet-4-20250514",
-      max_tokens: 256,
-      system: "Extract search keywords. Return JSON only: {\"high_level\": [\"themes\"], \"low_level\": [\"entities\"]}",
-      messages: [{ role: "user", content: query }],
+    // Step 1: Keywords
+    const kwResp = await callLLM({
+      provider,
+      model: selectedModel,
+      messages: [
+        { role: "system", content: 'Extract keywords. Return JSON: {"high_level": ["themes"], "low_level": ["entities"]}' },
+        { role: "user", content: query },
+      ],
+      temperature: 0,
+      maxTokens: 256,
+      jsonMode: providerConfig.supportsJSON,
     });
-    const kwText = kwMsg.content[0].type === "text" ? kwMsg.content[0].text : "{}";
 
-    // Step 2: Entity extraction (simulated graph traversal)
-    const entityMsg = await claude.messages.create({
-      model: "claude-sonnet-4-20250514",
-      max_tokens: 1024,
-      system: `You are a knowledge graph builder. Extract entities and relationships for the question.
-Return JSON: {"entities": [{"name": "...", "type": "PERSON|ORG|LOCATION|EVENT|CONCEPT"}], "relations": [{"source": "name", "target": "name", "type": "RELATIONSHIP_TYPE", "description": "brief"}]}`,
-      messages: [{ role: "user", content: query }],
+    // Step 2: Entity extraction
+    const entityResp = await callLLM({
+      provider,
+      model: selectedModel,
+      messages: [
+        { role: "system", content: `Extract entities and relationships. Return JSON:
+{"entities": [{"name": "...", "type": "PERSON|ORG|LOCATION|EVENT|CONCEPT"}],
+ "relations": [{"source": "name", "target": "name", "type": "...", "description": "brief"}]}` },
+        { role: "user", content: query },
+      ],
+      temperature: 0,
+      maxTokens: 1024,
+      jsonMode: providerConfig.supportsJSON,
     });
-    const entityText = entityMsg.content[0].type === "text" ? entityMsg.content[0].text : "{}";
 
     let entities: string[] = [];
     let relations: string[] = [];
     try {
-      const parsed = JSON.parse(entityText);
+      const parsed = JSON.parse(entityResp.content);
       entities = (parsed.entities || []).map((e: { name: string }) => e.name);
       relations = (parsed.relations || []).map(
         (r: { source: string; type: string; target: string; description?: string }) =>
           `${r.source} -[${r.type}]-> ${r.target}: ${r.description || ""}`
       );
-    } catch { /* ignore parse errors */ }
+    } catch { /* parse errors OK — content may not be pure JSON */ }
 
-    // Step 3: Generate with structured graph context
-    const graphContext = `### Entities Found:\n${entities.map((e) => `- ${e}`).join("\n")}\n\n### Relationships:\n${relations.map((r) => `- ${r}`).join("\n")}`;
+    // Step 3: Generate with graph context
+    const graphContext = `### Entities:\n${entities.map((e) => `- ${e}`).join("\n")}\n\n### Relations:\n${relations.map((r) => `- ${r}`).join("\n")}`;
 
-    const graphragMsg = await claude.messages.create({
-      model: "claude-sonnet-4-20250514",
-      max_tokens: 512,
-      system: "You are a knowledgeable assistant with access to a knowledge graph. Use the entities and relationships to answer accurately. Follow relationship chains for multi-hop reasoning. Be concise but thorough.",
-      messages: [{ role: "user", content: `Context:\n${graphContext}\n\nQuestion: ${query}\n\nAnswer:` }],
+    const graphragResp = await callLLM({
+      provider,
+      model: selectedModel,
+      messages: [
+        { role: "system", content: "You are a knowledgeable assistant with knowledge graph access. Use entities and relationships to answer accurately. Follow relationship chains for multi-hop reasoning. Be concise." },
+        { role: "user", content: `Context:\n${graphContext}\n\nQuestion: ${query}\n\nAnswer:` },
+      ],
+      temperature: 0,
+      maxTokens: 512,
     });
 
-    const graphragText = graphragMsg.content[0].type === "text" ? graphragMsg.content[0].text : "";
-    const graphragLatency = Date.now() - graphragStart;
-    const graphragTokens =
-      kwMsg.usage.input_tokens + kwMsg.usage.output_tokens +
-      entityMsg.usage.input_tokens + entityMsg.usage.output_tokens +
-      graphragMsg.usage.input_tokens + graphragMsg.usage.output_tokens;
-    const graphragCost =
-      ((kwMsg.usage.input_tokens + entityMsg.usage.input_tokens + graphragMsg.usage.input_tokens) / 1000) * 0.003 +
-      ((kwMsg.usage.output_tokens + entityMsg.usage.output_tokens + graphragMsg.usage.output_tokens) / 1000) * 0.015;
+    const graphragTotalTokens = kwResp.totalTokens + entityResp.totalTokens + graphragResp.totalTokens;
+    const graphragTotalCost = kwResp.costUsd + entityResp.costUsd + graphragResp.costUsd;
+    const graphragLatency = kwResp.latencyMs + entityResp.latencyMs + graphragResp.latencyMs;
 
-    // ── Adaptive Routing ────────────────────────────────
-    let complexity = 0.5;
-    let queryType = "unknown";
-    let recommended = "baseline";
-
+    // Adaptive routing
+    let complexity = 0.5, queryType = "unknown", recommended = "baseline";
     if (adaptiveRouting) {
-      // Simple heuristic + LLM analysis
-      const hasMultipleEntities = entities.length > 2;
-      const hasComparison = /same|both|compare|which.*first|who.*born/i.test(query);
-      const hasMultiHop = relations.length > 2;
-
-      complexity = (hasMultipleEntities ? 0.3 : 0) + (hasComparison ? 0.2 : 0) + (hasMultiHop ? 0.3 : 0.1);
-      complexity = Math.min(complexity + 0.1, 1.0);
-      queryType = hasComparison ? "comparison" : hasMultiHop ? "multi_hop" : "factoid";
+      const multi = entities.length > 2;
+      const compare = /same|both|compare|which.*first|who.*born|difference/i.test(query);
+      const hops = relations.length > 2;
+      complexity = Math.min((multi ? 0.3 : 0) + (compare ? 0.2 : 0) + (hops ? 0.3 : 0.1) + 0.1, 1.0);
+      queryType = compare ? "comparison" : hops ? "multi_hop" : "factoid";
       recommended = complexity >= 0.6 ? "graphrag" : "baseline";
     }
 
     return NextResponse.json({
       baseline: {
-        answer: baselineText,
-        tokens: baselineMsg.usage.input_tokens + baselineMsg.usage.output_tokens,
-        latencyMs: baselineLatency,
-        costUsd: baselineCost,
+        answer: baselineResp.content,
+        tokens: baselineResp.totalTokens,
+        latencyMs: baselineResp.latencyMs,
+        costUsd: baselineResp.costUsd,
         entities: [],
         relations: [],
       },
       graphrag: {
-        answer: graphragText,
-        tokens: graphragTokens,
+        answer: graphragResp.content,
+        tokens: graphragTotalTokens,
         latencyMs: graphragLatency,
-        costUsd: graphragCost,
+        costUsd: graphragTotalCost,
         entities,
         relations,
       },
       complexity,
       queryType,
       recommended,
+      provider,
+      model: selectedModel,
       totalTimeMs: Date.now() - startTime,
     });
   } catch (error) {
     console.error("Compare API error:", error);
-    // Return demo data on error
-    return NextResponse.json(getDemoResponse(""));
+    const errMsg = error instanceof Error ? error.message : "Unknown error";
+    return NextResponse.json(getDemoResponse("", "anthropic", errMsg));
   }
 }
 
-function getDemoResponse(query: string) {
+function getDemoResponse(query: string, provider: string, error?: string) {
   return {
     baseline: {
-      answer: "Based on available information, both Scott Derrickson and Ed Wood were American filmmakers, so yes, they shared the same nationality.",
-      tokens: 847,
-      latencyMs: 1240,
-      costUsd: 0.000203,
-      entities: [],
-      relations: [],
+      answer: "Both Scott Derrickson and Ed Wood were American filmmakers.",
+      tokens: 847, latencyMs: 1240, costUsd: 0.000203,
+      entities: [], relations: [],
     },
     graphrag: {
-      answer: "Yes. Scott Derrickson (born in Denver, Colorado, USA) and Ed Wood (born in Poughkeepsie, New York, USA) were both American. Following the NATIONALITY relationships in the knowledge graph: Derrickson → Denver → USA; Wood → Poughkeepsie → USA. Both paths converge at United States, confirming shared American nationality.",
-      tokens: 2134,
-      latencyMs: 3820,
-      costUsd: 0.000518,
+      answer: "Yes. Scott Derrickson (Denver, CO → USA) and Ed Wood (Poughkeepsie, NY → USA) were both American. Graph traversal confirms shared nationality via BORN_IN → LOCATED_IN → United States paths.",
+      tokens: 2134, latencyMs: 3820, costUsd: 0.000518,
       entities: ["Scott Derrickson", "Ed Wood", "United States", "Denver", "Poughkeepsie"],
-      relations: [
-        "Scott Derrickson -[BORN_IN]-> Denver, Colorado",
-        "Denver -[LOCATED_IN]-> United States",
-        "Ed Wood -[BORN_IN]-> Poughkeepsie, New York",
-        "Poughkeepsie -[LOCATED_IN]-> United States",
-      ],
+      relations: ["Scott Derrickson -[BORN_IN]-> Denver", "Denver -[LOCATED_IN]-> United States", "Ed Wood -[BORN_IN]-> Poughkeepsie", "Poughkeepsie -[LOCATED_IN]-> United States"],
     },
-    complexity: 0.72,
-    queryType: "comparison",
-    recommended: "graphrag",
-    totalTimeMs: 5060,
+    complexity: 0.72, queryType: "comparison", recommended: "graphrag",
+    provider, model: "demo-mode", totalTimeMs: 5060,
+    ...(error ? { demoMode: true, demoReason: error } : { demoMode: true, demoReason: "No API key configured" }),
   };
 }
