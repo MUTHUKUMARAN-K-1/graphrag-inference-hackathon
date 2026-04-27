@@ -1,0 +1,2 @@
+"""GraphRAG Inference Hackathon by TigerGraph"""
+__version__ = "1.0.0"
