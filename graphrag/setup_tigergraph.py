@@ -1,7 +1,7 @@
 """
 Setup script for TigerGraph — Run this once to initialize the graph database.
 Creates schema (Document, Chunk, Entity, Community vertices + edges)
-and installs GSQL queries (vector search, entity search, graph traversal).
+and installs all GSQL queries (basic + advanced novelty queries).
 """
 import os
 import sys
@@ -12,8 +12,9 @@ logger = logging.getLogger(__name__)
 
 
 def setup_tigergraph():
-    """One-time TigerGraph setup: create schema and install queries."""
+    """One-time TigerGraph setup: create schema and install all queries."""
     from graphrag.layers.graph_layer import GraphLayer
+    from graphrag.layers.gsql_advanced import ALL_ADVANCED_QUERIES
 
     config = {
         "host": os.getenv("TG_HOST", ""),
@@ -39,12 +40,21 @@ def setup_tigergraph():
     result = graph.create_schema()
     logger.info(f"Schema result: {result}")
 
-    logger.info("Installing GSQL queries...")
+    logger.info("Installing core GSQL queries (vector search, entity search, traversal)...")
     results = graph.install_queries()
     for name, status in results.items():
         logger.info(f"  {name}: {status}")
 
-    logger.info("✅ TigerGraph setup complete!")
+    logger.info("Installing advanced GSQL queries (PPR, paths, spreading activation, neighborhood)...")
+    gn = config.get("graphname", "GraphRAG")
+    for name, query_template in ALL_ADVANCED_QUERIES.items():
+        try:
+            result = graph.conn.gsql(query_template.format(graphname=gn))
+            logger.info(f"  {name}: {result}")
+        except Exception as e:
+            logger.warning(f"  {name}: FAILED — {e}")
+
+    logger.info("✅ TigerGraph setup complete! All queries installed.")
     return True
 
 
