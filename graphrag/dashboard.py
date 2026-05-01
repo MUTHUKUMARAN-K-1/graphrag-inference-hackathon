@@ -1,12 +1,12 @@
 """
-GraphRAG Comparison Dashboard — 4-Tab Gradio UI
-================================================
-Tab 1: Live Query Comparison (side-by-side)
-Tab 2: Batch Benchmark Results (HotpotQA)
+GraphRAG Comparison Dashboard — 4-Tab Gradio UI (3-Pipeline)
+=============================================================
+Tab 1: Live Query Comparison — 3 pipelines side-by-side
+Tab 2: Batch Benchmark Results (HotpotQA) — all 3 pipelines
 Tab 3: Cost Analysis (projections + distributions)
 Tab 4: Graph Explorer (interactive knowledge graph + reasoning paths)
 
-Novelties: Adaptive routing, graph reasoning explanations, real-time cost tracking
+Hackathon requirement: "one query in, all 3 pipelines run, side-by-side responses + metrics out"
 """
 import json
 import logging
@@ -23,7 +23,10 @@ from plotly.subplots import make_subplots
 from graphrag.layers.graph_layer import GraphLayer
 from graphrag.layers.llm_layer import LLMLayer
 from graphrag.layers.orchestration_layer import InferenceOrchestrator, EmbeddingManager
-from graphrag.layers.evaluation_layer import EvaluationLayer, EvalSample, compute_f1, compute_exact_match
+from graphrag.layers.evaluation_layer import (
+    EvaluationLayer, EvalSample, compute_f1, compute_exact_match,
+    compute_llm_judge, compute_bertscore,
+)
 from graphrag.benchmark import BenchmarkRunner
 
 logger = logging.getLogger(__name__)
@@ -53,6 +56,13 @@ def initialize_system():
     graph = GraphLayer()
     tg_host = os.getenv("TG_HOST", "")
     if tg_host:
+        graph_cfg = {
+            "host": tg_host,
+            "graphname": os.getenv("TG_GRAPH", "GraphRAG"),
+            "username": os.getenv("TG_USERNAME", "tigergraph"),
+            "password": os.getenv("TG_PASSWORD", ""),
+        }
+        graph = GraphLayer(config=graph_cfg)
         graph.connect()
 
     orchestrator = InferenceOrchestrator(graph_layer=graph, llm_layer=llm, embedder=embedder)
@@ -64,91 +74,132 @@ def initialize_system():
 
     benchmark_runner = BenchmarkRunner(orchestrator, evaluator)
     _initialized = True
-    return "✅ System initialized successfully! (LLM: " + llm.model + ")"
+    mode = "TigerGraph" if graph.is_connected else "Offline (passage-based)"
+    return f"✅ System initialized! LLM: {llm.model} | Graph: {mode}"
 
 
-# ── Tab 1: Live Query Comparison ─────────────────────────
+# ── Tab 1: Live 3-Pipeline Comparison ─────────────────────
 
 def run_live_comparison(query, enable_adaptive, top_k, hops):
+    """Run all 3 pipelines on a single query and return side-by-side results."""
     if not query.strip():
-        return ("Please enter a query.", "", "", "", 0, 0, 0, 0, 0, 0, None, "", "", "")
+        return ("Enter a query.", "", "", "", "", 0, 0, 0, 0, 0, 0, 0, 0, 0, None, "", "", "")
     if not _initialized:
         initialize_system()
 
     try:
         passages = _get_demo_passages(query)
-        if enable_adaptive:
-            comparison = orchestrator.run_adaptive(query, passages)
-        else:
-            comparison = orchestrator.run_comparison(query, passages, int(top_k), int(hops))
 
-        b, g = comparison.baseline, comparison.graphrag
-        fig = _build_comparison_chart(b, g)
+        # Run all 3 pipelines
+        lo = orchestrator.run_llm_only(query)
+        b = orchestrator.run_baseline_rag(query, passages, int(top_k))
+        g = orchestrator.run_graphrag(query, passages, hops=int(hops))
+
+        fig = _build_triple_chart(lo, b, g)
+
+        # Routing info
+        routing_info = ""
+        if enable_adaptive:
+            score, qtype, reasoning = orchestrator.analyze_complexity(query)
+            recommended = "GraphRAG" if score >= 0.6 else "Basic RAG"
+            routing_info = (
+                f"**🧠 Adaptive Routing:**\n"
+                f"- Complexity: {score:.2f} | Type: {qtype}\n"
+                f"- Recommended: **{recommended}**\n"
+                f"- {reasoning}")
+
+        entities_display = ""
+        if g.entities_found:
+            ent_list = g.entities_found[:8]
+            if isinstance(ent_list[0], dict):
+                entities_display = "**Entities Found:**\n" + "\n".join(
+                    [f"- 🔵 **{e.get('name','N/A')}** ({e.get('entity_type','N/A')})"
+                     for e in ent_list])
+            else:
+                entities_display = "**Entities Found:**\n" + "\n".join(
+                    [f"- 🔵 {e}" for e in ent_list])
+        if g.relations_traversed:
+            entities_display += "\n\n**Relationships:**\n" + "\n".join(
+                [f"- 🔗 {r}" for r in g.relations_traversed[:8]])
+        if g.novelty_chain:
+            entities_display += "\n\n**Novelty Chain:**\n" + "\n".join(
+                [f"- ⚡ {step}" for step in g.novelty_chain])
 
         baseline_ctx = "\n\n---\n\n".join([
             f"**[{i+1}]:** {c[:300]}{'...' if len(c) > 300 else ''}"
             for i, c in enumerate(b.contexts[:5])
-        ]) or "No contexts."
+        ]) or "No contexts retrieved."
 
         graphrag_ctx = "\n\n---\n\n".join([
             f"**[{i+1}]:** {c[:300]}{'...' if len(c) > 300 else ''}"
             for i, c in enumerate(g.contexts[:5])
-        ]) or "No contexts."
+        ]) or "No contexts retrieved."
 
-        entities_display = ""
-        if g.entities_found:
-            entities_display = "**Entities Found:**\n" + "\n".join(
-                [f"- 🔵 **{e.get('name','N/A')}** ({e.get('entity_type','N/A')})"
-                 for e in g.entities_found[:8]])
-        if g.relations_traversed:
-            entities_display += "\n\n**Relationships:**\n" + "\n".join(
-                [f"- 🔗 {r}" for r in g.relations_traversed[:8]])
-
-        routing_info = ""
-        if enable_adaptive:
-            routing_info = (
-                f"**🧠 Adaptive Routing:**\n"
-                f"- Complexity: {g.complexity_score:.2f} | Type: {g.query_type}\n"
-                f"- Recommended: **{comparison.recommended_pipeline.upper()}**\n"
-                f"- {comparison.routing_reason}")
-
-        return ("✅ Done!", b.answer, g.answer, routing_info,
-                b.total_tokens, g.total_tokens,
-                round(b.latency_ms, 1), round(g.latency_ms, 1),
-                round(b.cost_usd, 6), round(g.cost_usd, 6),
-                fig, baseline_ctx, graphrag_ctx, entities_display)
+        return (
+            "✅ All 3 pipelines complete!",
+            lo.answer, b.answer, g.answer, routing_info,
+            lo.total_tokens, b.total_tokens, g.total_tokens,
+            round(lo.latency_ms, 1), round(b.latency_ms, 1), round(g.latency_ms, 1),
+            round(lo.cost_usd, 6), round(b.cost_usd, 6), round(g.cost_usd, 6),
+            fig, baseline_ctx, graphrag_ctx, entities_display,
+        )
     except Exception as e:
-        return (f"❌ Error: {e}", "", "", "", 0, 0, 0, 0, 0, 0, None, "", "", "")
+        logger.error(f"Live comparison error: {e}", exc_info=True)
+        return (f"❌ Error: {e}", "", "", "", "", 0, 0, 0, 0, 0, 0, 0, 0, 0, None, "", "", "")
 
 
 def _get_demo_passages(query):
+    """Get passages matching the query from HotpotQA. Falls back to first row if no match."""
     try:
         from datasets import load_dataset
         ds = load_dataset("hotpotqa/hotpot_qa", "distractor", split="validation", streaming=True)
-        for row in ds:
+        query_lower = query.lower().strip().rstrip("?").strip()
+
+        # Try to find matching question
+        for i, row in enumerate(ds):
+            row_q = row["question"].lower().strip().rstrip("?").strip()
+            if query_lower == row_q or query_lower in row_q or row_q in query_lower:
+                return [f"{t}: {' '.join(s)}"
+                        for t, s in zip(row["context"]["title"], row["context"]["sentences"])]
+            if i > 200:  # don't scan entire dataset
+                break
+
+        # Fallback: return first row's passages
+        ds2 = load_dataset("hotpotqa/hotpot_qa", "distractor", split="validation", streaming=True)
+        for row in ds2:
             return [f"{t}: {' '.join(s)}"
                     for t, s in zip(row["context"]["title"], row["context"]["sentences"])]
-    except Exception:
-        pass
-    return ["Demo passage. Connect TigerGraph for full functionality.",
-            "GraphRAG extracts entities and relationships for better retrieval.",
-            "The system supports both baseline RAG and GraphRAG pipelines."]
+    except Exception as e:
+        logger.warning(f"Could not load HotpotQA: {e}")
+    return [
+        "Demo passage. Connect TigerGraph for full graph-powered retrieval.",
+        "GraphRAG extracts entities and relationships for better multi-hop retrieval.",
+        "The system supports LLM-Only, Basic RAG, and GraphRAG pipelines.",
+    ]
 
 
-def _build_comparison_chart(baseline, graphrag):
+def _build_triple_chart(llm_only, baseline, graphrag):
+    """Build 3-pipeline comparison bar chart."""
     fig = make_subplots(rows=1, cols=3, subplot_titles=("Tokens", "Latency (ms)", "Cost ($)"),
                         horizontal_spacing=0.12)
-    colors = ["#3498db", "#e74c3c"]
-    methods = ["Baseline", "GraphRAG"]
-    fig.add_trace(go.Bar(x=methods, y=[baseline.total_tokens, graphrag.total_tokens],
-                         marker_color=colors, text=[baseline.total_tokens, graphrag.total_tokens],
-                         textposition='auto', showlegend=False), row=1, col=1)
-    fig.add_trace(go.Bar(x=methods, y=[baseline.latency_ms, graphrag.latency_ms],
-                         marker_color=colors, text=[f"{baseline.latency_ms:.0f}", f"{graphrag.latency_ms:.0f}"],
-                         textposition='auto', showlegend=False), row=1, col=2)
-    fig.add_trace(go.Bar(x=methods, y=[baseline.cost_usd, graphrag.cost_usd],
-                         marker_color=colors, text=[f"${baseline.cost_usd:.6f}", f"${graphrag.cost_usd:.6f}"],
-                         textposition='auto', showlegend=False), row=1, col=3)
+    colors = ["#95a5a6", "#3498db", "#e74c3c"]
+    methods = ["LLM-Only", "Basic RAG", "GraphRAG"]
+
+    fig.add_trace(go.Bar(
+        x=methods, y=[llm_only.total_tokens, baseline.total_tokens, graphrag.total_tokens],
+        marker_color=colors,
+        text=[llm_only.total_tokens, baseline.total_tokens, graphrag.total_tokens],
+        textposition='auto', showlegend=False), row=1, col=1)
+    fig.add_trace(go.Bar(
+        x=methods, y=[llm_only.latency_ms, baseline.latency_ms, graphrag.latency_ms],
+        marker_color=colors,
+        text=[f"{llm_only.latency_ms:.0f}", f"{baseline.latency_ms:.0f}", f"{graphrag.latency_ms:.0f}"],
+        textposition='auto', showlegend=False), row=1, col=2)
+    fig.add_trace(go.Bar(
+        x=methods, y=[llm_only.cost_usd, baseline.cost_usd, graphrag.cost_usd],
+        marker_color=colors,
+        text=[f"${llm_only.cost_usd:.6f}", f"${baseline.cost_usd:.6f}", f"${graphrag.cost_usd:.6f}"],
+        textposition='auto', showlegend=False), row=1, col=3)
     fig.update_layout(height=350, margin=dict(t=40, b=20, l=20, r=20),
                       paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
     return fig
@@ -167,7 +218,7 @@ def run_batch_benchmark(num_samples, top_k, hops, progress=gr.Progress()):
     try:
         results = benchmark_runner.run_hotpotqa_benchmark(
             num_samples=int(num_samples), top_k=int(top_k), hops=int(hops),
-            progress_callback=progress_cb)
+            progress_callback=progress_cb, run_judge=True, run_bertscore=False)
         _benchmark_results = results.get("results", [])
         agg = results.get("aggregate", {})
         report = results.get("report", "")
@@ -175,55 +226,77 @@ def run_batch_benchmark(num_samples, top_k, hops, progress=gr.Progress()):
         if not _benchmark_results:
             return "No results.", None, None, None, report
 
+        lo = agg.get("llm_only", {})
+        b = agg.get("baseline", {})
+        g = agg.get("graphrag", {})
+
         summary = pd.DataFrame({
-            "Metric": ["Avg F1", "Avg EM", "Avg Tokens", "Avg Cost ($)", "Avg Latency (ms)", "F1 Win Rate"],
-            "Baseline RAG": [
-                f"{agg['baseline']['avg_f1']:.4f}", f"{agg['baseline']['avg_em']:.4f}",
-                f"{agg['baseline']['avg_tokens']:.0f}", f"${agg['baseline']['avg_cost']:.6f}",
-                f"{agg['baseline']['avg_latency_ms']:.0f}",
-                f"{1 - agg.get('graphrag_f1_win_rate', 0.5):.1%}"],
+            "Metric": ["Avg F1", "Avg EM", "LLM-Judge Pass%", "Avg Tokens",
+                       "Avg Cost ($)", "Avg Latency (ms)"],
+            "LLM-Only": [
+                f"{lo.get('avg_f1', 0):.4f}", f"{lo.get('avg_em', 0):.4f}",
+                f"{lo.get('judge_pass_rate', 0):.1%}",
+                f"{lo.get('avg_tokens', 0):.0f}", f"${lo.get('avg_cost', 0):.6f}",
+                f"{lo.get('avg_latency_ms', 0):.0f}"],
+            "Basic RAG": [
+                f"{b.get('avg_f1', 0):.4f}", f"{b.get('avg_em', 0):.4f}",
+                f"{b.get('judge_pass_rate', 0):.1%}",
+                f"{b.get('avg_tokens', 0):.0f}", f"${b.get('avg_cost', 0):.6f}",
+                f"{b.get('avg_latency_ms', 0):.0f}"],
             "GraphRAG": [
-                f"{agg['graphrag']['avg_f1']:.4f}", f"{agg['graphrag']['avg_em']:.4f}",
-                f"{agg['graphrag']['avg_tokens']:.0f}", f"${agg['graphrag']['avg_cost']:.6f}",
-                f"{agg['graphrag']['avg_latency_ms']:.0f}",
-                f"{agg.get('graphrag_f1_win_rate', 0.5):.1%}"]
+                f"{g.get('avg_f1', 0):.4f}", f"{g.get('avg_em', 0):.4f}",
+                f"{g.get('judge_pass_rate', 0):.1%}",
+                f"{g.get('avg_tokens', 0):.0f}", f"${g.get('avg_cost', 0):.6f}",
+                f"{g.get('avg_latency_ms', 0):.0f}"],
         })
 
         bar_fig = _build_benchmark_bar(agg)
         radar_fig = _build_radar(agg)
-        return (f"✅ Done! {len(_benchmark_results)} samples.", summary, bar_fig, radar_fig, report)
+        return (f"✅ Done! {len(_benchmark_results)} samples evaluated across 3 pipelines.",
+                summary, bar_fig, radar_fig, report)
     except Exception as e:
+        logger.error(f"Benchmark error: {e}", exc_info=True)
         return f"❌ Error: {e}", None, None, None, ""
 
 
 def _build_benchmark_bar(agg):
-    metrics = ["F1", "EM", "Context Hit"]
-    bvals = [agg["baseline"]["avg_f1"], agg["baseline"]["avg_em"], agg["baseline"]["avg_context_hit"]]
-    gvals = [agg["graphrag"]["avg_f1"], agg["graphrag"]["avg_em"], agg["graphrag"]["avg_context_hit"]]
+    lo = agg.get("llm_only", {})
+    b = agg.get("baseline", {})
+    g = agg.get("graphrag", {})
+    metrics = ["F1", "EM", "Judge Pass%"]
+    lo_vals = [lo.get("avg_f1", 0), lo.get("avg_em", 0), lo.get("judge_pass_rate", 0)]
+    b_vals = [b.get("avg_f1", 0), b.get("avg_em", 0), b.get("judge_pass_rate", 0)]
+    g_vals = [g.get("avg_f1", 0), g.get("avg_em", 0), g.get("judge_pass_rate", 0)]
     fig = go.Figure(data=[
-        go.Bar(name="Baseline", x=metrics, y=bvals, marker_color="#3498db",
-               text=[f"{v:.3f}" for v in bvals], textposition='auto'),
-        go.Bar(name="GraphRAG", x=metrics, y=gvals, marker_color="#e74c3c",
-               text=[f"{v:.3f}" for v in gvals], textposition='auto')])
-    fig.update_layout(barmode='group', title="Answer Quality", yaxis_title="Score", height=400,
+        go.Bar(name="LLM-Only", x=metrics, y=lo_vals, marker_color="#95a5a6",
+               text=[f"{v:.3f}" for v in lo_vals], textposition='auto'),
+        go.Bar(name="Basic RAG", x=metrics, y=b_vals, marker_color="#3498db",
+               text=[f"{v:.3f}" for v in b_vals], textposition='auto'),
+        go.Bar(name="GraphRAG", x=metrics, y=g_vals, marker_color="#e74c3c",
+               text=[f"{v:.3f}" for v in g_vals], textposition='auto'),
+    ])
+    fig.update_layout(barmode='group', title="Answer Quality (3 Pipelines)",
+                      yaxis_title="Score", height=400,
                       paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
     return fig
 
 
 def _build_radar(agg):
-    b, g = agg["baseline"], agg["graphrag"]
+    b = agg.get("baseline", {})
+    g = agg.get("graphrag", {})
     cats = ["F1", "EM", "Context Hit", "Token Eff.", "Cost Eff."]
-    te = min(b["avg_tokens"] / max(g["avg_tokens"], 1), 2.0)
-    ce = min(b["avg_cost"] / max(g["avg_cost"], 0.000001), 2.0)
-    bv = [b["avg_f1"], b["avg_em"], b["avg_context_hit"], 1.0, 1.0]
-    gv = [g["avg_f1"], g["avg_em"], g["avg_context_hit"], te, ce]
+    te = min(b.get("avg_tokens", 1) / max(g.get("avg_tokens", 1), 1), 2.0)
+    ce = min(b.get("avg_cost", 0.001) / max(g.get("avg_cost", 0.000001), 0.000001), 2.0)
+    bv = [b.get("avg_f1", 0), b.get("avg_em", 0), b.get("avg_context_hit", 0), 1.0, 1.0]
+    gv = [g.get("avg_f1", 0), g.get("avg_em", 0), g.get("avg_context_hit", 0), te, ce]
     fig = go.Figure()
     fig.add_trace(go.Scatterpolar(r=bv+[bv[0]], theta=cats+[cats[0]], fill='toself',
-                                   name='Baseline', line_color='#3498db', opacity=0.6))
+                                   name='Basic RAG', line_color='#3498db', opacity=0.6))
     fig.add_trace(go.Scatterpolar(r=gv+[gv[0]], theta=cats+[cats[0]], fill='toself',
                                    name='GraphRAG', line_color='#e74c3c', opacity=0.6))
     fig.update_layout(polar=dict(radialaxis=dict(visible=True, range=[0, 1.2])),
-                      title="Multi-Metric Radar", height=450, paper_bgcolor='rgba(0,0,0,0)')
+                      title="GraphRAG vs Basic RAG Radar", height=450,
+                      paper_bgcolor='rgba(0,0,0,0)')
     return fig
 
 
@@ -241,41 +314,52 @@ def compute_cost_analysis(num_queries, model):
     n = int(num_queries)
 
     if _benchmark_results:
-        ab = sum(r["baseline_tokens"] for r in _benchmark_results) / len(_benchmark_results)
-        ag = sum(r["graphrag_tokens"] for r in _benchmark_results) / len(_benchmark_results)
-        acb = sum(r["baseline_cost"] for r in _benchmark_results) / len(_benchmark_results)
-        acg = sum(r["graphrag_cost"] for r in _benchmark_results) / len(_benchmark_results)
+        al = sum(r.get("llm_only_tokens", 0) for r in _benchmark_results) / len(_benchmark_results)
+        ab = sum(r.get("baseline_tokens", 0) for r in _benchmark_results) / len(_benchmark_results)
+        ag = sum(r.get("graphrag_tokens", 0) for r in _benchmark_results) / len(_benchmark_results)
+        acl = sum(r.get("llm_only_cost", 0) for r in _benchmark_results) / len(_benchmark_results)
+        acb = sum(r.get("baseline_cost", 0) for r in _benchmark_results) / len(_benchmark_results)
+        acg = sum(r.get("graphrag_cost", 0) for r in _benchmark_results) / len(_benchmark_results)
     else:
-        ab, ag = 950, 2400
+        al, ab, ag = 500, 950, 2400
+        acl = (400/1000*p["input"] + 100/1000*p["output"])
         acb = (800/1000*p["input"] + 150/1000*p["output"])
         acg = (2200/1000*p["input"] + 200/1000*p["output"])
 
     summary = pd.DataFrame({
         "Metric": ["Avg Tokens", "Cost/Query", f"Total ({n:,}q)", "Monthly (1K qpd)", "Annual"],
-        "Baseline": [f"{ab:.0f}", f"${acb:.6f}", f"${acb*n:.4f}", f"${acb*1000*30:.2f}", f"${acb*1000*365:.2f}"],
+        "LLM-Only": [f"{al:.0f}", f"${acl:.6f}", f"${acl*n:.4f}", f"${acl*1000*30:.2f}", f"${acl*1000*365:.2f}"],
+        "Basic RAG": [f"{ab:.0f}", f"${acb:.6f}", f"${acb*n:.4f}", f"${acb*1000*30:.2f}", f"${acb*1000*365:.2f}"],
         "GraphRAG": [f"{ag:.0f}", f"${acg:.6f}", f"${acg*n:.4f}", f"${acg*1000*30:.2f}", f"${acg*1000*365:.2f}"],
-        "Ratio": [f"{ag/max(ab,1):.2f}x"]*5
     })
 
     qr = list(range(0, n+1, max(n//50, 1)))
     fig_cum = go.Figure()
-    fig_cum.add_trace(go.Scatter(x=qr, y=[acb*q for q in qr], mode='lines', name='Baseline',
+    fig_cum.add_trace(go.Scatter(x=qr, y=[acl*q for q in qr], mode='lines', name='LLM-Only',
+                                  line=dict(color='#95a5a6', width=2, dash='dash')))
+    fig_cum.add_trace(go.Scatter(x=qr, y=[acb*q for q in qr], mode='lines', name='Basic RAG',
                                   line=dict(color='#3498db', width=3)))
     fig_cum.add_trace(go.Scatter(x=qr, y=[acg*q for q in qr], mode='lines', name='GraphRAG',
                                   line=dict(color='#e74c3c', width=3)))
-    fig_cum.update_layout(title=f"Cumulative Cost ({model})", xaxis_title="Queries", yaxis_title="Cost ($)",
-                          height=400, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
+    fig_cum.update_layout(title=f"Cumulative Cost — 3 Pipelines ({model})",
+                          xaxis_title="Queries", yaxis_title="Cost ($)", height=400,
+                          paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
 
     fig_tok = go.Figure()
     if _benchmark_results:
-        fig_tok.add_trace(go.Histogram(x=[r["baseline_tokens"] for r in _benchmark_results],
-                                        name="Baseline", opacity=0.7, marker_color="#3498db"))
-        fig_tok.add_trace(go.Histogram(x=[r["graphrag_tokens"] for r in _benchmark_results],
-                                        name="GraphRAG", opacity=0.7, marker_color="#e74c3c"))
-        fig_tok.update_layout(barmode='overlay', title="Token Distribution", height=400,
+        fig_tok.add_trace(go.Histogram(
+            x=[r.get("llm_only_tokens", 0) for r in _benchmark_results],
+            name="LLM-Only", opacity=0.5, marker_color="#95a5a6"))
+        fig_tok.add_trace(go.Histogram(
+            x=[r.get("baseline_tokens", 0) for r in _benchmark_results],
+            name="Basic RAG", opacity=0.6, marker_color="#3498db"))
+        fig_tok.add_trace(go.Histogram(
+            x=[r.get("graphrag_tokens", 0) for r in _benchmark_results],
+            name="GraphRAG", opacity=0.6, marker_color="#e74c3c"))
+        fig_tok.update_layout(barmode='overlay', title="Token Distribution (3 Pipelines)", height=400,
                               paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
     else:
-        fig_tok.add_annotation(text="Run benchmark first for distribution", showarrow=False)
+        fig_tok.add_annotation(text="Run benchmark first for distribution data", showarrow=False)
 
     return summary, fig_cum, fig_tok
 
@@ -292,8 +376,11 @@ def explore_graph(query, depth):
 
         G = nx.Graph()
         for e in gr_result.entities_found[:20]:
-            G.add_node(e.get("name", "?"), entity_type=e.get("entity_type", "CONCEPT"),
-                       description=e.get("description", ""))
+            if isinstance(e, dict):
+                G.add_node(e.get("name", "?"), entity_type=e.get("entity_type", "CONCEPT"),
+                           description=e.get("description", ""))
+            else:
+                G.add_node(str(e), entity_type="CONCEPT")
         for r in gr_result.relations_traversed[:30]:
             parts = r.split(" -[")
             if len(parts) == 2:
@@ -307,8 +394,10 @@ def explore_graph(query, depth):
         if not G.nodes():
             G.add_node("Query", entity_type="QUERY")
             for e in gr_result.entities_found[:5]:
-                G.add_node(e.get("name", "Entity"), entity_type=e.get("entity_type", "CONCEPT"))
-                G.add_edge("Query", e.get("name", "Entity"), relation="FOUND")
+                name = e.get("name", "Entity") if isinstance(e, dict) else str(e)
+                etype = e.get("entity_type", "CONCEPT") if isinstance(e, dict) else "CONCEPT"
+                G.add_node(name, entity_type=etype)
+                G.add_edge("Query", name, relation="FOUND")
 
         pos = nx.spring_layout(G, k=2, iterations=50, seed=42)
         colors_map = {"PERSON": "#FF6B6B", "ORGANIZATION": "#4ECDC4", "LOCATION": "#45B7D1",
@@ -338,7 +427,8 @@ def explore_graph(query, depth):
                           paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
 
         info = {"nodes": len(G.nodes()), "edges": len(G.edges()),
-                "entities": len(gr_result.entities_found), "relations": len(gr_result.relations_traversed)}
+                "entities": len(gr_result.entities_found), "relations": len(gr_result.relations_traversed),
+                "novelty_chain": gr_result.novelty_chain}
         stats = pd.DataFrame({"Metric": ["Nodes", "Edges", "Avg Degree", "Density", "Entities", "Relations"],
                               "Value": [len(G.nodes()), len(G.edges()),
                                         f"{sum(d for _,d in G.degree())/max(len(G.nodes()),1):.1f}",
@@ -348,6 +438,7 @@ def explore_graph(query, depth):
         explanation = orchestrator.explain_graphrag_reasoning(query, gr_result)
         return fig, info, stats, explanation, gr_result.answer
     except Exception as e:
+        logger.error(f"Graph explorer error: {e}", exc_info=True)
         empty = go.Figure()
         empty.add_annotation(text=str(e), showarrow=False)
         return empty, {}, pd.DataFrame(), str(e), ""
@@ -356,12 +447,12 @@ def explore_graph(query, depth):
 # ── Build Dashboard ───────────────────────────────────────
 
 def build_dashboard():
-    with gr.Blocks(title="GraphRAG Inference Dashboard") as demo:
+    with gr.Blocks(title="GraphRAG 3-Pipeline Dashboard") as demo:
         gr.Markdown("""
-        # 🔍 GraphRAG Inference Hackathon — Comparison Dashboard
-        ### Proving that graphs make LLM inference faster, cheaper, and smarter
-        **Architecture:** TigerGraph (Graph) → Orchestration → LLM → Evaluation
-        | **Novelties:** 🧠 Adaptive Routing | 📋 Schema-Bounded Extraction | 🔗 Reasoning Paths | 🔑 Dual-Level Keywords
+        # 🔍 GraphRAG Inference Hackathon — 3-Pipeline Comparison Dashboard
+        ### One query in → three pipelines run → side-by-side responses + metrics out
+        **Pipelines:** ⚪ LLM-Only | 🔵 Basic RAG | 🔴 GraphRAG (TigerGraph + 6 Novelties)
+        **Evaluation:** LLM-as-a-Judge (PASS/FAIL) | BERTScore F1 | F1/EM | RAGAS | Token Tracking
         """)
 
         with gr.Row():
@@ -370,99 +461,115 @@ def build_dashboard():
         init_btn.click(fn=initialize_system, outputs=init_status)
 
         with gr.Tabs():
-            # ── Tab 1: Live Comparison ──────────────────
-            with gr.Tab("🔴 Live Query Comparison"):
-                gr.Markdown("## Side-by-Side Pipeline Comparison")
+            # ── Tab 1: Live 3-Pipeline Comparison ───────
+            with gr.Tab("🔴 Live 3-Pipeline Comparison"):
+                gr.Markdown("## One Query → Three Pipelines → Side-by-Side Results")
                 with gr.Row():
-                    query_input = gr.Textbox(label="Question", placeholder="e.g., Were Scott Derrickson and Ed Wood of the same nationality?", lines=2, scale=3)
+                    query_input = gr.Textbox(
+                        label="Question",
+                        placeholder="e.g., Were Scott Derrickson and Ed Wood of the same nationality?",
+                        lines=2, scale=3)
                     with gr.Column(scale=1):
                         adaptive = gr.Checkbox(label="🧠 Adaptive Routing", value=True)
                         topk = gr.Slider(1, 10, value=5, step=1, label="Top-K")
                         hops_s = gr.Slider(1, 4, value=2, step=1, label="Hops")
 
-                run_btn = gr.Button("▶ Run Comparison", variant="primary", size="lg")
+                run_btn = gr.Button("▶ Run All 3 Pipelines", variant="primary", size="lg")
                 status = gr.Textbox(label="Status", interactive=False)
                 routing = gr.Markdown(visible=True)
 
                 with gr.Row():
                     with gr.Column():
-                        gr.Markdown("### 🔵 Baseline RAG")
-                        b_ans = gr.Textbox(label="Answer", lines=5, interactive=False)
+                        gr.Markdown("### ⚪ Pipeline 1: LLM-Only")
+                        lo_ans = gr.Textbox(label="Answer", lines=4, interactive=False)
+                        with gr.Row():
+                            lo_tok = gr.Number(label="Tokens", precision=0)
+                            lo_lat = gr.Number(label="Latency (ms)", precision=1)
+                            lo_cost = gr.Number(label="Cost ($)", precision=6)
+                    with gr.Column():
+                        gr.Markdown("### 🔵 Pipeline 2: Basic RAG")
+                        b_ans = gr.Textbox(label="Answer", lines=4, interactive=False)
                         with gr.Row():
                             b_tok = gr.Number(label="Tokens", precision=0)
                             b_lat = gr.Number(label="Latency (ms)", precision=1)
                             b_cost = gr.Number(label="Cost ($)", precision=6)
                     with gr.Column():
-                        gr.Markdown("### 🔴 GraphRAG")
-                        g_ans = gr.Textbox(label="Answer", lines=5, interactive=False)
+                        gr.Markdown("### 🔴 Pipeline 3: GraphRAG")
+                        g_ans = gr.Textbox(label="Answer", lines=4, interactive=False)
                         with gr.Row():
                             g_tok = gr.Number(label="Tokens", precision=0)
                             g_lat = gr.Number(label="Latency (ms)", precision=1)
                             g_cost = gr.Number(label="Cost ($)", precision=6)
 
-                chart = gr.Plot(label="Comparison")
-                with gr.Accordion("📄 Retrieved Contexts", open=False):
+                chart = gr.Plot(label="3-Pipeline Comparison")
+                with gr.Accordion("📄 Retrieved Contexts (RAG vs GraphRAG)", open=False):
                     with gr.Row():
-                        b_ctx = gr.Markdown()
-                        g_ctx = gr.Markdown()
-                with gr.Accordion("🕸️ Entities & Relations", open=False):
+                        b_ctx = gr.Markdown(label="Basic RAG Contexts")
+                        g_ctx = gr.Markdown(label="GraphRAG Contexts")
+                with gr.Accordion("🕸️ Entities, Relations & Novelty Chain", open=False):
                     ent_disp = gr.Markdown()
 
-                run_btn.click(fn=run_live_comparison, inputs=[query_input, adaptive, topk, hops_s],
-                              outputs=[status, b_ans, g_ans, routing, b_tok, g_tok, b_lat, g_lat,
-                                       b_cost, g_cost, chart, b_ctx, g_ctx, ent_disp])
+                run_btn.click(
+                    fn=run_live_comparison,
+                    inputs=[query_input, adaptive, topk, hops_s],
+                    outputs=[status, lo_ans, b_ans, g_ans, routing,
+                             lo_tok, b_tok, g_tok,
+                             lo_lat, b_lat, g_lat,
+                             lo_cost, b_cost, g_cost,
+                             chart, b_ctx, g_ctx, ent_disp])
                 gr.Examples(examples=[
                     ["Were Scott Derrickson and Ed Wood of the same nationality?"],
                     ["What government position was held by the woman who portrayed Nora Batty?"],
                     ["Which magazine was started first, Arthur's Magazine or First for Women?"],
                     ["Who was born first, Arthur Conan Doyle or Agatha Christie?"],
                     ["What is the capital of the country where the Eiffel Tower is located?"]],
-                    inputs=query_input, label="📝 Example Questions")
+                    inputs=query_input, label="📝 Example Questions (HotpotQA)")
 
             # ── Tab 2: Batch Benchmark ──────────────────
-            with gr.Tab("📊 Batch Benchmark"):
-                gr.Markdown("## Benchmark on HotpotQA")
+            with gr.Tab("📊 Batch Benchmark (3-Pipeline)"):
+                gr.Markdown("## Benchmark on HotpotQA — All 3 Pipelines + LLM-as-a-Judge")
                 with gr.Row():
                     n_samples = gr.Slider(10, 500, value=50, step=10, label="Samples")
                     bk = gr.Slider(1, 10, value=5, step=1, label="Top-K")
                     bh = gr.Slider(1, 4, value=2, step=1, label="Hops")
-                    bench_btn = gr.Button("🏃 Run Benchmark", variant="primary")
+                    bench_btn = gr.Button("🏃 Run 3-Pipeline Benchmark", variant="primary")
                 bench_status = gr.Textbox(label="Status", interactive=False)
-                summary_df = gr.Dataframe(label="Summary")
+                summary_df = gr.Dataframe(label="3-Pipeline Summary")
                 with gr.Row():
-                    bar_chart = gr.Plot(label="Quality")
-                    radar_chart = gr.Plot(label="Radar")
+                    bar_chart = gr.Plot(label="Answer Quality")
+                    radar_chart = gr.Plot(label="Radar (RAG vs GraphRAG)")
                 with gr.Accordion("📝 Full Report", open=False):
                     report = gr.Textbox(lines=30, interactive=False)
                 bench_btn.click(fn=run_batch_benchmark, inputs=[n_samples, bk, bh],
                                 outputs=[bench_status, summary_df, bar_chart, radar_chart, report])
 
             # ── Tab 3: Cost Analysis ────────────────────
-            with gr.Tab("💰 Cost Analysis"):
-                gr.Markdown("## Cost & Token Analysis")
+            with gr.Tab("💰 Cost Analysis (3-Pipeline)"):
+                gr.Markdown("## Cost & Token Analysis — All 3 Pipelines")
                 with gr.Row():
                     cq = gr.Slider(100, 100000, value=10000, step=100, label="Queries to Project")
-                    cm = gr.Dropdown(["gpt-4o-mini", "gpt-4o", "gpt-3.5-turbo", "claude-3-5-sonnet", "claude-3-haiku"],
+                    cm = gr.Dropdown(["gpt-4o-mini", "gpt-4o", "gpt-3.5-turbo",
+                                      "claude-3-5-sonnet", "claude-3-haiku"],
                                      value="gpt-4o-mini", label="Model")
                     cost_btn = gr.Button("💵 Calculate", variant="primary")
-                cost_df = gr.Dataframe(label="Breakdown")
+                cost_df = gr.Dataframe(label="3-Pipeline Cost Breakdown")
                 with gr.Row():
-                    cum_chart = gr.Plot(label="Cumulative Cost")
+                    cum_chart = gr.Plot(label="Cumulative Cost (3 Pipelines)")
                     tok_chart = gr.Plot(label="Token Distribution")
                 cost_btn.click(fn=compute_cost_analysis, inputs=[cq, cm],
                                outputs=[cost_df, cum_chart, tok_chart])
 
             # ── Tab 4: Graph Explorer ───────────────────
             with gr.Tab("🕸️ Graph Explorer"):
-                gr.Markdown("## Interactive Knowledge Graph Explorer\n*Visualize how GraphRAG traverses the graph*")
+                gr.Markdown("## Interactive Knowledge Graph Explorer\n*Visualize how GraphRAG traverses the graph and applies novelty techniques*")
                 with gr.Row():
                     gq = gr.Textbox(label="Query", placeholder="Enter a question...", scale=3)
                     gd = gr.Slider(1, 4, value=2, step=1, label="Depth", scale=1)
                     exp_btn = gr.Button("🔍 Explore", variant="primary", scale=1)
                 graph_plot = gr.Plot(label="Knowledge Graph")
                 with gr.Row():
-                    graph_stats = gr.Dataframe(label="Stats")
-                    node_info = gr.JSON(label="Details")
+                    graph_stats = gr.Dataframe(label="Graph Stats")
+                    node_info = gr.JSON(label="Details + Novelty Chain")
                 with gr.Accordion("🧠 Reasoning Path", open=True):
                     reasoning = gr.Markdown()
                     graph_ans = gr.Textbox(label="GraphRAG Answer", interactive=False)
@@ -476,8 +583,8 @@ def build_dashboard():
 
         gr.Markdown("""
         ---
-        **GraphRAG Inference Hackathon** by TigerGraph | TigerGraph + GPT-4o-mini + Gradio + RAGAS
-        **Novelties:** Adaptive Query Routing 🧠 | Schema-Bounded Extraction 📋 | Graph Reasoning Paths 🔗 | Dual-Level Keywords 🔑
+        **GraphRAG Inference Hackathon** by TigerGraph | 3 Pipelines · 14 Novelties · 12 LLM Providers · 12 Research Papers
+        **Eval:** LLM-as-a-Judge ✅ | BERTScore ✅ | RAGAS ✅ | F1/EM ✅ | Token Tracking ✅
         """)
     return demo
 
