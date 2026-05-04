@@ -66,7 +66,7 @@ export function LiveCompare() {
   const [state, setState] = useState<ComparisonState>({
     loading: false, query: "", baseline: null, graphrag: null,
     complexity: 0, queryType: "", recommended: "",
-    provider: "anthropic", model: "", demoMode: false,
+    provider: "openai", model: "", demoMode: false,
   });
   const [adaptiveRouting, setAdaptiveRouting] = useState(true);
 

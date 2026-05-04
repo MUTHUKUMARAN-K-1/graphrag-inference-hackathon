@@ -12,8 +12,8 @@ from typing import Any, Dict, List, Optional, Tuple
 logger = logging.getLogger(__name__)
 
 # ── GSQL Schema Definition ───────────────────────────────
-SCHEMA_DDL = """
-USE GRAPH {graphname}
+SCHEMA_DDL_GLOBAL = """
+USE GLOBAL
 
 CREATE VERTEX Document (PRIMARY_ID doc_id STRING, title STRING, content STRING, source STRING) WITH primary_id_as_attribute="true"
 CREATE VERTEX Chunk (PRIMARY_ID chunk_id STRING, text STRING, embedding LIST<DOUBLE>, chunk_index INT, token_count INT, doc_id STRING) WITH primary_id_as_attribute="true"
@@ -24,6 +24,14 @@ CREATE DIRECTED EDGE PART_OF (FROM Chunk, TO Document, position INT)
 CREATE DIRECTED EDGE MENTIONS (FROM Chunk, TO Entity, mention_count INT DEFAULT 1, confidence FLOAT DEFAULT 1.0)
 CREATE UNDIRECTED EDGE RELATED_TO (FROM Entity, TO Entity, relation_type STRING, weight FLOAT DEFAULT 1.0, description STRING, keywords STRING)
 CREATE DIRECTED EDGE IN_COMMUNITY (FROM Entity, TO Community)
+"""
+
+SCHEMA_DDL_GRAPH = """
+CREATE GRAPH {graphname}(Document, Chunk, Entity, Community, PART_OF, MENTIONS, RELATED_TO, IN_COMMUNITY)
+"""
+
+SCHEMA_DDL_DROP_GRAPH = """
+DROP GRAPH {graphname}
 """
 
 # ── GSQL Installed Queries ────────────────────────────────
@@ -114,17 +122,37 @@ class GraphLayer:
         try:
             import pyTigerGraph as tg
             cfg = self.config or {}
+            import requests as _req
+            host = cfg.get("host", "").rstrip("/")
+            secret = cfg.get("token", "")
+            graphname = cfg.get("graphname", "GraphRAG")
+            # Try TG 4.x then 3.x token endpoints
+            api_token = ""
+            for endpoint, payload in [
+                ("/gsql/v1/tokens", {"secret": secret}),
+                ("/restpp/requesttoken", {"secret": secret, "lifetime": 2592000}),
+            ]:
+                try:
+                    r = _req.post(f"{host}{endpoint}", json=payload, timeout=15)
+                    logger.info(f"[{endpoint}] status={r.status_code} body={r.text[:300]}")
+                    if r.status_code == 200:
+                        data = r.json()
+                        api_token = (data.get("token")
+                                     or data.get("results", {}).get("token", "")
+                                     or data.get("data", {}).get("token", ""))
+                        if api_token:
+                            logger.info(f"Token obtained via {endpoint}")
+                            break
+                except Exception as ex:
+                    logger.info(f"[{endpoint}] exception: {ex}")
+                    continue
+            if not api_token:
+                raise RuntimeError("Could not obtain token from any endpoint")
             self.conn = tg.TigerGraphConnection(
-                host=cfg.get("host", ""),
-                graphname=cfg.get("graphname", "GraphRAG"),
-                username=cfg.get("username", "tigergraph"),
-                password=cfg.get("password", ""),
+                host=host,
+                graphname=graphname,
+                apiToken=api_token,
             )
-            if cfg.get("token"):
-                self.conn.apiToken = cfg["token"]
-            else:
-                secret = self.conn.createSecret()
-                self.conn.getToken(secret)
             self._connected = True
             logger.info("Connected to TigerGraph Cloud successfully.")
             return True
@@ -134,7 +162,27 @@ class GraphLayer:
 
     def create_schema(self) -> str:
         gn = (self.config or {}).get("graphname", "GraphRAG")
-        return self.conn.gsql(SCHEMA_DDL.format(graphname=gn))
+        try:
+            existing = self.conn.getVertexTypes()
+            if "Document" not in existing:
+                r1 = self.conn.gsql(SCHEMA_DDL_GLOBAL)
+                logger.info(f"Global schema: {str(r1)[:300]}")
+            else:
+                logger.info("Global vertex types already exist, skipping.")
+        except Exception as e:
+            logger.warning(f"Global schema check: {e}")
+        try:
+            r2 = self.conn.gsql(SCHEMA_DDL_GRAPH.format(graphname=gn))
+            if "could not be created" in str(r2) or "conflicts" in str(r2):
+                logger.info(f"Graph '{gn}' already exists, skipping.")
+                return "exists"
+            logger.info(f"Graph schema: {str(r2)[:300]}")
+            return r2
+        except Exception as e:
+            if "conflict" in str(e).lower() or "already" in str(e).lower():
+                logger.info(f"Graph '{gn}' already exists, skipping.")
+                return "exists"
+            raise
 
     def install_queries(self) -> Dict[str, str]:
         gn = (self.config or {}).get("graphname", "GraphRAG")
@@ -239,9 +287,9 @@ def chunk_text(text: str, chunk_size: int = 1000, overlap: int = 100) -> List[st
         chunk = text[start:end].strip()
         if chunk:
             chunks.append(chunk)
-        start = end - overlap
-        if start >= len(text):
+        if end >= len(text):
             break
+        start = end - overlap
     return chunks
 
 def cosine_similarity(vec_a: List[float], vec_b: List[float]) -> float:

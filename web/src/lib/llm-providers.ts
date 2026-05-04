@@ -76,22 +76,21 @@ export interface LLMResponse {
 export const PROVIDERS: Record<ProviderId, ProviderConfig> = {
   openai: {
     id: "openai",
-    name: "OpenAI",
-    baseURL: "https://api.openai.com/v1",
+    name: "OpenAI / BotLearn",
+    baseURL: process.env.OPENAI_BASE_URL || "https://api.openai.com/v1",
     apiKeyEnv: "OPENAI_API_KEY",
-    defaultModel: "gpt-4o-mini",
+    defaultModel: process.env.LLM_MODEL || "gpt-4o-mini",
     costPer1kInput: 0.00015,
     costPer1kOutput: 0.0006,
     supportsStreaming: true,
     supportsJSON: true,
-    maxContextWindow: 128000,
+    maxContextWindow: 1048576,
     requiresApiKey: true,
     models: [
+      { id: "gemini-2.5-flash", name: "Gemini 2.5 Flash", contextWindow: 1048576, costPer1kInput: 0.00015, costPer1kOutput: 0.0006, speed: "fast", quality: "high" },
+      { id: "gemini-2.0-flash", name: "Gemini 2.0 Flash", contextWindow: 1048576, costPer1kInput: 0.0001, costPer1kOutput: 0.0004, speed: "fast", quality: "medium" },
       { id: "gpt-4o", name: "GPT-4o", contextWindow: 128000, costPer1kInput: 0.0025, costPer1kOutput: 0.01, speed: "medium", quality: "high" },
       { id: "gpt-4o-mini", name: "GPT-4o Mini", contextWindow: 128000, costPer1kInput: 0.00015, costPer1kOutput: 0.0006, speed: "fast", quality: "medium" },
-      { id: "gpt-4.1", name: "GPT-4.1", contextWindow: 1047576, costPer1kInput: 0.002, costPer1kOutput: 0.008, speed: "medium", quality: "high" },
-      { id: "gpt-4.1-mini", name: "GPT-4.1 Mini", contextWindow: 1047576, costPer1kInput: 0.0004, costPer1kOutput: 0.0016, speed: "fast", quality: "medium" },
-      { id: "o3-mini", name: "o3-mini", contextWindow: 200000, costPer1kInput: 0.0011, costPer1kOutput: 0.0044, speed: "slow", quality: "high" },
     ],
   },
 

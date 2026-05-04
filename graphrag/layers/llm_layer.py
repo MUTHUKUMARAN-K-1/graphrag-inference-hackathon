@@ -75,7 +75,8 @@ class LLMLayer:
             import os
             key = self._api_key or os.getenv("OPENAI_API_KEY", "")
             if key:
-                self.client = OpenAI(api_key=key)
+                base_url = os.getenv("OPENAI_BASE_URL", "")
+                self.client = OpenAI(api_key=key, base_url=base_url) if base_url else OpenAI(api_key=key)
                 logger.info(f"LLM initialized: {self.model}")
             else:
                 logger.warning("No API key — using mock mode")
@@ -150,7 +151,7 @@ Return JSON:
  "relations": [{{"source": "source entity name", "target": "target entity name", "type": "one of allowed types", "description": "brief"}}]}}
 
 Text: {text}"""
-        return self.generate([{"role": "user", "content": prompt}], max_tokens=2048, json_mode=True)
+        return self.generate([{"role": "user", "content": prompt}], max_tokens=4096, json_mode=False)
 
     def extract_keywords(self, query):
         """Extract dual-level keywords for GraphRAG retrieval (novelty: LightRAG-inspired)."""

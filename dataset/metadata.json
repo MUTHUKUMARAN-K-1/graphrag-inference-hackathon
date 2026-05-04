@@ -1,0 +1,10 @@
+{
+  "num_documents": 478,
+  "total_tokens": 2507616,
+  "sources": [
+    "wikipedia"
+  ],
+  "avg_tokens_per_doc": 5246,
+  "meets_2m_minimum": true,
+  "created_at": "2026-05-04 21:47:45"
+}

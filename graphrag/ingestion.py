@@ -27,6 +27,7 @@ class IngestionPipeline:
 
     def ingest_document(self, doc_id, title, content, source="", extract_entities=True):
         """Ingest a single document into the graph."""
+        content = content[:20000]  # cap at ~4k tokens to prevent MemoryError
         self.graph.upsert_document(doc_id, title, content, source)
         self.stats["documents"] += 1
 
@@ -48,7 +49,17 @@ class IngestionPipeline:
         """Extract entities from chunk and upsert to graph."""
         try:
             resp = self.llm.extract_entities(text)
-            data = json.loads(resp.content)
+            content = resp.content
+            start = content.find("{")
+            end = content.rfind("}") + 1
+            if start == -1 or end == 0:
+                raise ValueError("No JSON found")
+            raw = content[start:end]
+            try:
+                data = json.loads(raw)
+            except Exception:
+                from json_repair import repair_json
+                data = json.loads(repair_json(raw))
         except Exception as e:
             logger.error(f"Entity extraction failed: {e}")
             self.stats["errors"] += 1
@@ -102,9 +113,17 @@ class IngestionPipeline:
 
     def ingest_custom_documents(self, documents: List[Dict], extract_entities=True):
         """Ingest custom documents. Each dict: {id, title, content, source}."""
-        for doc in documents:
-            self.ingest_document(
-                doc_id=doc.get("id", hashlib.md5(doc["title"].encode()).hexdigest()[:10]),
-                title=doc.get("title", ""), content=doc.get("content", ""),
-                source=doc.get("source", "custom"), extract_entities=extract_entities)
+        import gc
+        total = len(documents)
+        for i, doc in enumerate(documents, 1):
+            try:
+                self.ingest_document(
+                    doc_id=doc.get("id", hashlib.md5(doc["title"].encode()).hexdigest()[:10]),
+                    title=doc.get("title", ""), content=doc.get("content", ""),
+                    source=doc.get("source", "custom"), extract_entities=extract_entities)
+                logger.info(f"Ingested {i}/{total}: {doc.get('title', '')[:60]}")
+            except MemoryError:
+                logger.warning(f"Skipped {i}/{total} (MemoryError): {doc.get('title', '')[:60]}")
+                self.stats["errors"] += 1
+            gc.collect()
         return self.stats

@@ -11,8 +11,8 @@ export default function BenchmarksPage() {
           <div className="badge-blue mb-4" style={{ fontSize: "0.75rem" }}>📊 Performance</div>
           <h1 className="display-xl mb-3">Benchmarks</h1>
           <p className="body-lg mx-auto" style={{ maxWidth: "560px", color: "var(--color-muted)" }}>
-            Run batch evaluations on HotpotQA questions. Compare F1 score, exact match,
-            token usage, and cost across both pipelines.
+            Run batch evaluations on 10 science questions from the ingested Wikipedia corpus.
+            Compare token usage, F1 score, and cost across all 3 pipelines.
           </p>
         </div>
       </div>

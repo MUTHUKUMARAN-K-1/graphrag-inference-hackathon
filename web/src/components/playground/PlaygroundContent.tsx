@@ -45,7 +45,7 @@ export function PlaygroundContent() {
   const [providers, setProviders] = useState<ProviderInfo[]>(FALLBACK_PROVIDERS);
   const [loading, setLoading] = useState(false);
   const [query, setQuery] = useState("");
-  const [provider, setProvider] = useState("anthropic");
+  const [provider, setProvider] = useState("openai");
   const [model, setModel] = useState("");
   const [adaptiveRouting, setAdaptiveRouting] = useState(true);
   const [baseline, setBaseline] = useState<PipelineResult | null>(null);

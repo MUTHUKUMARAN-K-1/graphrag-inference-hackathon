@@ -207,7 +207,7 @@ def save_dataset(documents: List[Dict], output_dir: str = "dataset"):
 
     # Save as JSONL
     output_path = os.path.join(output_dir, "corpus.jsonl")
-    with open(output_path, "w") as f:
+    with open(output_path, "w", encoding="utf-8") as f:
         for doc in documents:
             f.write(json.dumps(doc, ensure_ascii=False) + "\n")
 
@@ -235,7 +235,7 @@ def save_dataset(documents: List[Dict], output_dir: str = "dataset"):
     return meta
 
 
-def ingest_to_tigergraph(documents: List[Dict], max_docs: int = None):
+def ingest_to_tigergraph(documents: List[Dict], max_docs: int = None, extract_entities: bool = True):
     """Ingest prepared documents into TigerGraph via the ingestion pipeline."""
     from graphrag.layers.graph_layer import GraphLayer
     from graphrag.layers.llm_layer import LLMLayer
@@ -248,6 +248,7 @@ def ingest_to_tigergraph(documents: List[Dict], max_docs: int = None):
         "graphname": os.getenv("TG_GRAPH", "GraphRAG"),
         "username": os.getenv("TG_USERNAME", "tigergraph"),
         "password": os.getenv("TG_PASSWORD", ""),
+        "token": os.getenv("TG_TOKEN", ""),
     })
     if not graph.connect():
         logger.error("TigerGraph connection failed. Set TG_HOST and TG_PASSWORD.")
@@ -270,7 +271,13 @@ def ingest_to_tigergraph(documents: List[Dict], max_docs: int = None):
 
     custom_docs = [{"id": d["id"], "title": d["title"], "content": d["content"],
                     "source": d["source"]} for d in docs_to_ingest]
-    stats = pipeline.ingest_custom_documents(custom_docs, extract_entities=True)
+    try:
+        stats = pipeline.ingest_custom_documents(custom_docs, extract_entities=extract_entities)
+    except Exception as e:
+        import traceback
+        logger.error(f"Ingestion crashed: {e}")
+        logger.error(traceback.format_exc())
+        return
 
     logger.info(f"✅ Ingestion complete: {stats}")
     return stats
@@ -293,6 +300,8 @@ def main():
                         help="Also ingest into TigerGraph (requires TG_HOST, TG_PASSWORD)")
     parser.add_argument("--max-ingest", type=int, default=None,
                         help="Max docs to ingest (default: all)")
+    parser.add_argument("--no-entities", action="store_true",
+                        help="Skip LLM entity extraction (faster, free)")
     args = parser.parse_args()
 
     # Load dataset
@@ -325,7 +334,8 @@ def main():
 
     # Ingest into TigerGraph
     if args.ingest:
-        ingest_to_tigergraph(documents, max_docs=args.max_ingest)
+        ingest_to_tigergraph(documents, max_docs=args.max_ingest,
+                             extract_entities=not args.no_entities)
 
 
 if __name__ == "__main__":

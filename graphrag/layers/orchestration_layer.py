@@ -84,13 +84,14 @@ class EmbeddingManager:
         self._local_model = None
 
     def initialize(self):
-        if self.provider == "openai":
+        import os
+        if os.getenv("EMBEDDING_PROVIDER", "local") == "openai" and self.provider == "openai":
             try:
                 from openai import OpenAI
-                import os
                 key = self._api_key or os.getenv("OPENAI_API_KEY", "")
                 if key:
-                    self._client = OpenAI(api_key=key)
+                    base_url = os.getenv("OPENAI_BASE_URL", "")
+                    self._client = OpenAI(api_key=key, base_url=base_url) if base_url else OpenAI(api_key=key)
                     logger.info(f"OpenAI embeddings: {self.model}")
                 else:
                     self._init_local()
