@@ -36,8 +36,8 @@ export function HeroSection() {
             </h1>
 
             <p className="body-lg mb-10 animate-fade-in-up delay-200" style={{ maxWidth: "540px", color: "#3d3d3a" }}>
-              A dual-pipeline system that routes queries through knowledge graphs
-              when it matters — cutting tokens by 40%, speeding up multi-hop questions,
+              A 3-pipeline system that routes queries through knowledge graphs
+              when it matters — cutting tokens by 44%, speeding up multi-hop questions,
               and delivering measurably better answers.
             </p>
 

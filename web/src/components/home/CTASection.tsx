@@ -42,8 +42,8 @@ export function CTASection() {
           maxWidth: "480px", margin: "0 auto 40px",
           lineHeight: 1.6,
         }}>
-          Run a live comparison between Baseline RAG and GraphRAG.
-          Measure F1, tokens, cost, and latency — all in your browser.
+          Run a live comparison across all 3 pipelines — LLM-Only, Basic RAG, and GraphRAG.
+          Measure tokens, cost, LLM-Judge accuracy, and BERTScore — all in your browser.
         </p>
         <div className="flex flex-wrap gap-4 justify-center">
           <Link href="/playground" className="btn btn-primary btn-lg no-underline">

@@ -2,11 +2,11 @@
 
 export function StatsBar() {
   const stats = [
-    { value: "+21%", label: "F1 on Bridge Queries", color: "#FF6B00" },
+    { value: "−44%", label: "Token Reduction vs RAG", color: "#FF6B00" },
     { value: "4", label: "AI Factory Layers", color: "#002B49" },
     { value: "12", label: "LLM Providers", color: "#0072CE" },
     { value: "5", label: "Novel Features", color: "#cc785c" },
-    { value: "55", label: "Unit Tests", color: "#5db8a6" },
+    { value: "50", label: "Unit Tests", color: "#5db8a6" },
   ];
 
   return (

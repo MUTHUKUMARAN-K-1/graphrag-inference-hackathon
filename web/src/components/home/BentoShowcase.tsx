@@ -25,8 +25,8 @@ export function BentoShowcase() {
                 Live Playground
               </h3>
               <p style={{ color: "rgba(255,255,255,0.8)", fontSize: "0.9375rem", maxWidth: "400px" }}>
-                Ask any question and watch both pipelines race side-by-side.
-                Real-time token counting, cost tracking, and quality metrics.
+                Ask any science question and watch all 3 pipelines run simultaneously —
+                LLM-Only, Basic RAG, and GraphRAG. Real-time tokens, cost, and accuracy.
               </p>
               <div className="flex gap-2 mt-4">
                 <span className="badge" style={{ background: "rgba(255,255,255,0.2)", color: "white", fontSize: "0.6875rem" }}>12 LLM Providers</span>
@@ -43,7 +43,7 @@ export function BentoShowcase() {
                 Benchmarks
               </h3>
               <p className="body-sm" style={{ color: "var(--color-on-dark-soft)" }}>
-                Run HotpotQA benchmarks with F1, EM, and radar charts.
+                Run Wikipedia science benchmarks with F1, LLM-Judge, BERTScore, and radar charts.
               </p>
             </div>
           </Link>

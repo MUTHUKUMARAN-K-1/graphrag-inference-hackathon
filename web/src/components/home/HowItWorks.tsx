@@ -11,7 +11,7 @@ const STEPS = [
   {
     number: "02",
     title: "Dual Pipeline Activation",
-    description: "Both pipelines execute simultaneously: Baseline RAG (vector search → LLM) and GraphRAG (entity extraction → graph traversal → LLM).",
+    description: "All 3 pipelines execute simultaneously: LLM-Only (no retrieval), Baseline RAG (vector search → LLM), and GraphRAG (entity extraction → graph traversal → LLM).",
     detail: "Schema-bounded extraction ensures valid entities | GSQL multi-hop traversal",
     color: "#0072CE",
   },
@@ -25,7 +25,7 @@ const STEPS = [
   {
     number: "04",
     title: "LLM Generation & Evaluation",
-    description: "Claude (or any of 12 providers) generates answers from the structured context. RAGAS evaluates F1, Exact Match, and quality metrics in real-time.",
+    description: "Any of 12 LLM providers (Gemini, GPT-4, Llama, etc.) generates answers. Evaluated with F1, Exact Match, LLM-as-a-Judge (PASS/FAIL), and BERTScore in real-time.",
     detail: "Cost tracking | Token counting | Latency measurement",
     color: "#cc785c",
   },
