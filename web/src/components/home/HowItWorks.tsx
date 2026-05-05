@@ -10,7 +10,7 @@ const STEPS = [
   },
   {
     number: "02",
-    title: "Dual Pipeline Activation",
+    title: "3-Pipeline Activation",
     description: "All 3 pipelines execute simultaneously: LLM-Only (no retrieval), Baseline RAG (vector search → LLM), and GraphRAG (entity extraction → graph traversal → LLM).",
     detail: "Schema-bounded extraction ensures valid entities | GSQL multi-hop traversal",
     color: "#0072CE",
