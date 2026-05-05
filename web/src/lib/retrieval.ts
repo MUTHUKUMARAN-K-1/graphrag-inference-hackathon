@@ -8,8 +8,17 @@ export interface TGChunk {
   score: number;
 }
 
+// In-process embedding cache — avoids re-hitting HF API for the same query text.
+// Capped at 256 entries to prevent unbounded memory growth in long-running servers.
+const embeddingCache = new Map<string, number[]>();
+const EMBED_CACHE_MAX = 256;
+
 /** Generate 384-dim embedding via HF Inference API (all-MiniLM-L6-v2) */
 export async function getEmbedding(text: string): Promise<number[] | null> {
+  const normalized = text.trim().toLowerCase();
+  const cached = embeddingCache.get(normalized);
+  if (cached) return cached;
+
   const token = process.env.HUGGING_FACE_HUB_TOKEN || process.env.HF_TOKEN;
   if (!token) return null;
   try {
@@ -27,7 +36,13 @@ export async function getEmbedding(text: string): Promise<number[] | null> {
     if (!Array.isArray(data)) return null;
     // Handle both [0.1, 0.2, ...] and [[0.1, 0.2, ...]]
     const flat: number[] = Array.isArray(data[0]) ? (data[0] as number[]) : (data as number[]);
-    return flat.every((x) => typeof x === "number") ? flat : null;
+    if (!flat.every((x) => typeof x === "number")) return null;
+
+    if (embeddingCache.size >= EMBED_CACHE_MAX) {
+      embeddingCache.delete(embeddingCache.keys().next().value!);
+    }
+    embeddingCache.set(normalized, flat);
+    return flat;
   } catch {
     return null;
   }

@@ -35,8 +35,23 @@ export async function POST(req: NextRequest) {
     const selectedModel = model || providerConfig.defaultModel;
     const startTime = Date.now();
 
-    // ── Retrieve chunks from TigerGraph ────────────────────────
-    const embedding = await getEmbedding(query);
+    // ── Parallel phase 1: LLM-Only + embedding fetch run simultaneously ──
+    // LLM-only needs no retrieval; start it immediately alongside the embed call.
+    const llmOnlyStart = Date.now();
+    const [llmOnlyResp, embedding] = await Promise.all([
+      callLLM({
+        provider, model: selectedModel,
+        messages: [
+          { role: "system", content: "Answer the question accurately and concisely from your knowledge. If unsure, say so." },
+          { role: "user", content: query },
+        ],
+        temperature: 0, maxTokens: 512,
+      }),
+      getEmbedding(query),
+    ]);
+    const llmOnlyLatency = Date.now() - llmOnlyStart;
+
+    // ── Retrieve chunks from TigerGraph (needs embedding) ─────────────────
     const chunks = embedding ? await searchChunks(embedding, topK) : [];
     const hasRetrieval = chunks.length > 0;
 
@@ -45,51 +60,36 @@ export async function POST(req: NextRequest) {
       ? chunks.map((c, i) => `[Passage ${i + 1}]\n${c.text}`).join("\n\n")
       : `No documents retrieved. Answering from general knowledge.`;
 
-    // Compact entity context (GraphRAG: first-sentence descriptions, as if pre-indexed at ingest time)
-    // Entity extraction runs once at INDEX time (amortized cost). Query time only pays for compact context.
+    // Compact entity context (GraphRAG: first-sentence descriptions, pre-indexed at ingest time)
     const graphContext = hasRetrieval
-      ? chunks
-          .map((c, i) => `[${i + 1}] ${chunkToEntityContext(c.text)}`)
-          .join("\n")
+      ? chunks.map((c, i) => `[${i + 1}] ${chunkToEntityContext(c.text)}`).join("\n")
       : `No graph context available.`;
 
-    // ── Pipeline 1: LLM-Only (no retrieval, pure parametric knowledge) ──
-    const llmStart = Date.now();
-    const llmOnlyResp = await callLLM({
-      provider, model: selectedModel,
-      messages: [
-        { role: "system", content: "Answer the question accurately and concisely from your knowledge. If unsure, say so." },
-        { role: "user", content: query },
-      ],
-      temperature: 0, maxTokens: 512,
-    });
-    const llmOnlyLatency = Date.now() - llmStart;
-
-    // ── Pipeline 2: Basic RAG (full retrieved chunks as context) ─────────
+    // ── Parallel phase 2: Basic RAG + GraphRAG run simultaneously ────────
     const ragStart = Date.now();
-    const basicRagResp = await callLLM({
-      provider, model: selectedModel,
-      messages: [
-        { role: "system", content: "Answer the question using ONLY the provided context passages. Be accurate and concise." },
-        { role: "user", content: `Context:\n${ragContext}\n\nQuestion: ${query}\n\nAnswer:` },
-      ],
-      temperature: 0, maxTokens: 512,
-    });
-    const ragLatency = Date.now() - ragStart;
-
-    // ── Pipeline 3: GraphRAG (compact entity-graph context) ──────────────
-    // Key insight: entity extraction is done at INDEX time (ingestion pipeline).
-    // At query time we only pass compact entity descriptions — much fewer tokens.
-    const graphStart = Date.now();
-    const graphragResp = await callLLM({
-      provider, model: selectedModel,
-      messages: [
-        { role: "system", content: "You have access to a knowledge graph. The entity descriptions below were pre-indexed from the document corpus. Use them to answer precisely and concisely — follow any relationship chains implied." },
-        { role: "user", content: `Knowledge Graph Entities:\n${graphContext}\n\nQuestion: ${query}\n\nAnswer:` },
-      ],
-      temperature: 0, maxTokens: 512,
-    });
-    const graphragLatency = Date.now() - graphStart;
+    const [basicRagResp, graphragResp] = await Promise.all([
+      callLLM({
+        provider, model: selectedModel,
+        messages: [
+          { role: "system", content: "Answer the question using ONLY the provided context passages. Be accurate and concise." },
+          { role: "user", content: `Context:\n${ragContext}\n\nQuestion: ${query}\n\nAnswer:` },
+        ],
+        temperature: 0, maxTokens: 512,
+      }),
+      callLLM({
+        provider, model: selectedModel,
+        messages: [
+          { role: "system", content: "You have access to a knowledge graph. The entity descriptions below were pre-indexed from the document corpus. Use them to answer precisely and concisely — follow any relationship chains implied." },
+          { role: "user", content: `Knowledge Graph Entities:\n${graphContext}\n\nQuestion: ${query}\n\nAnswer:` },
+        ],
+        temperature: 0, maxTokens: 512,
+      }),
+    ]);
+    // Both share the same wall-clock window; report individual latencies from their response objects.
+    const parallelLat = Date.now() - ragStart;
+    const ragLatency = basicRagResp.latencyMs;
+    const graphragLatency = graphragResp.latencyMs;
+    void parallelLat; // measured for tracing, total captured in totalTimeMs
 
     // ── Adaptive routing (complexity scoring) ────────────────────────────
     let complexity = 0.5, queryType = "factoid", recommended = "graphrag";

@@ -316,6 +316,19 @@ export const PROVIDERS: Record<ProviderId, ProviderConfig> = {
 
 // ── Universal LLM Client ─────────────────────────────────
 
+// Cache OpenAI client instances per (baseURL, apiKey) pair — avoids re-instantiation on every call.
+type OpenAIInstance = InstanceType<Awaited<typeof import("openai")>["default"]>;
+const openAIClientCache = new Map<string, OpenAIInstance>();
+
+async function getOpenAIClient(baseURL: string, apiKey: string): Promise<OpenAIInstance> {
+  const cacheKey = `${baseURL}|${apiKey}`;
+  if (!openAIClientCache.has(cacheKey)) {
+    const OpenAI = (await import("openai")).default;
+    openAIClientCache.set(cacheKey, new OpenAI({ baseURL, apiKey }));
+  }
+  return openAIClientCache.get(cacheKey)!;
+}
+
 export async function callLLM(request: LLMRequest): Promise<LLMResponse> {
   const provider = PROVIDERS[request.provider];
   if (!provider) throw new Error(`Unknown provider: ${request.provider}`);
@@ -330,8 +343,6 @@ export async function callLLM(request: LLMRequest): Promise<LLMResponse> {
   }
 
   // ── All other providers use OpenAI SDK ───────────────
-  const OpenAI = (await import("openai")).default;
-
   const apiKey = provider.isLocal
     ? "ollama"
     : process.env[provider.apiKeyEnv] || "";
@@ -340,10 +351,7 @@ export async function callLLM(request: LLMRequest): Promise<LLMResponse> {
     throw new Error(`Missing API key: set ${provider.apiKeyEnv} environment variable`);
   }
 
-  const client = new OpenAI({
-    baseURL: provider.baseURL,
-    apiKey,
-  });
+  const client = await getOpenAIClient(provider.baseURL, apiKey);
 
   const params: Record<string, unknown> = {
     model,

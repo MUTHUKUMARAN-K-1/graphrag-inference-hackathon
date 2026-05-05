@@ -157,42 +157,47 @@ export async function POST(req: NextRequest) {
   const providerConfig = PROVIDERS[provider];
   const hasKey = providerConfig?.isLocal || !providerConfig?.requiresApiKey || !!process.env[providerConfig?.apiKeyEnv || ""];
 
-  const results: Record<string, unknown>[] = [];
-  let totalLlmF1 = 0, totalBaselineF1 = 0, totalGraphragF1 = 0;
-  let totalLlmEM = 0, totalBaselineEM = 0, totalGraphragEM = 0;
-  let totalLlmTokens = 0, totalBaselineTokens = 0, totalGraphragTokens = 0;
-  let totalLlmCost = 0, totalBaselineCost = 0, totalGraphragCost = 0;
-  let totalLlmLatency = 0, totalBaselineLatency = 0, totalGraphragLatency = 0;
+  // Run all samples in parallel — reduces benchmark wall time from ~N×LLM_time to ~1×LLM_time.
+  // Within each sample: LLM-only + embedding run simultaneously; then basicRag + graphrag run simultaneously.
+  const settled = await Promise.allSettled(
+    CORPUS_SAMPLES.slice(0, numSamples).map(async (sample, i) => {
+      const ctx = RETRIEVAL_CONTEXTS[i];
 
-  for (let i = 0; i < numSamples; i++) {
-    const sample = CORPUS_SAMPLES[i];
-    const ctx = RETRIEVAL_CONTEXTS[i];
+      if (!hasKey) {
+        const llmT = 90 + Math.floor(Math.random() * 50);
+        const bT = 480 + Math.floor(Math.random() * 200);
+        const gT = 155 + Math.floor(Math.random() * 60);
+        const llmF1 = 0.75 + Math.random() * 0.15, bF1 = 0.82 + Math.random() * 0.12, gF1 = 0.86 + Math.random() * 0.1;
+        return { idx: i, query: sample.question, gold: sample.answer, type: sample.type,
+          llmonly_f1: +llmF1.toFixed(4), baseline_f1: +bF1.toFixed(4), graphrag_f1: +gF1.toFixed(4),
+          llmonly_em: Math.random() > 0.4 ? 1 : 0, baseline_em: Math.random() > 0.3 ? 1 : 0, graphrag_em: Math.random() > 0.25 ? 1 : 0,
+          llmonly_tokens: llmT, baseline_tokens: bT, graphrag_tokens: gT,
+          llmonly_cost: 0, baseline_cost: 0, graphrag_cost: 0,
+          llmonly_latency: 0, baseline_latency: 0, graphrag_latency: 0, chunks_source: "demo" };
+      }
 
-    if (!hasKey) {
-      // Pre-computed demo values
-      const llmT = 90 + Math.floor(Math.random() * 50);
-      const bT = 480 + Math.floor(Math.random() * 200);
-      const gT = 155 + Math.floor(Math.random() * 60);
-      const llmF1 = 0.75 + Math.random() * 0.15, bF1 = 0.82 + Math.random() * 0.12, gF1 = 0.86 + Math.random() * 0.1;
-      results.push({ idx: i, query: sample.question, gold: sample.answer, type: sample.type,
-        llmonly_f1: +llmF1.toFixed(4), baseline_f1: +bF1.toFixed(4), graphrag_f1: +gF1.toFixed(4),
-        llmonly_em: Math.random() > 0.4 ? 1 : 0, baseline_em: Math.random() > 0.3 ? 1 : 0, graphrag_em: Math.random() > 0.25 ? 1 : 0,
-        llmonly_tokens: llmT, baseline_tokens: bT, graphrag_tokens: gT });
-      totalLlmF1 += llmF1; totalBaselineF1 += bF1; totalGraphragF1 += gF1;
-      totalLlmTokens += llmT; totalBaselineTokens += bT; totalGraphragTokens += gT;
-      continue;
-    }
+      const selectedModel = model || providerConfig!.defaultModel;
 
-    try {
-      const selectedModel = model || providerConfig.defaultModel;
+      // Phase 1: LLM-only + embedding fetch in parallel
+      const llmOnlyStart = Date.now();
+      const [llmResp, embedding] = await Promise.all([
+        callLLM({
+          provider, model: selectedModel,
+          messages: [
+            { role: "system", content: "Answer the science question concisely in 1–5 words." },
+            { role: "user", content: sample.question },
+          ],
+          temperature: 0, maxTokens: 64,
+        }),
+        getEmbedding(sample.question).catch(() => null),
+      ]);
+      const llmLat = Date.now() - llmOnlyStart;
 
-      // Try live TigerGraph retrieval first; fall back to pre-loaded corpus passages
+      // TigerGraph retrieval (sequential after embedding)
       let ragContext = ctx.full;
       let graphContext = ctx.compact;
       let chunksSource = "corpus";
-
       try {
-        const embedding = await getEmbedding(sample.question);
         if (embedding) {
           const chunks = await searchChunks(embedding, 5);
           if (chunks.length > 0) {
@@ -203,71 +208,63 @@ export async function POST(req: NextRequest) {
         }
       } catch { /* use pre-loaded context */ }
 
-      // Pipeline 1: LLM-only
-      const llmStart = Date.now();
-      const llmResp = await callLLM({
-        provider, model: selectedModel,
-        messages: [
-          { role: "system", content: "Answer the science question concisely in 1–5 words." },
-          { role: "user", content: sample.question },
-        ],
-        temperature: 0, maxTokens: 64,
-      });
-      const llmLat = Date.now() - llmStart;
+      // Phase 2: Basic RAG + GraphRAG in parallel
+      const retrievalStart = Date.now();
+      const [ragResp, graphResp] = await Promise.all([
+        callLLM({
+          provider, model: selectedModel,
+          messages: [
+            { role: "system", content: "Answer using the provided context. Be concise, 1–5 words if possible." },
+            { role: "user", content: `Context:\n${ragContext}\n\nQuestion: ${sample.question}\n\nAnswer:` },
+          ],
+          temperature: 0, maxTokens: 64,
+        }),
+        callLLM({
+          provider, model: selectedModel,
+          messages: [
+            { role: "system", content: "Using the pre-indexed knowledge graph entity descriptions, answer concisely in 1–5 words." },
+            { role: "user", content: `Graph Entities:\n${graphContext}\n\nQuestion: ${sample.question}\n\nAnswer:` },
+          ],
+          temperature: 0, maxTokens: 64,
+        }),
+      ]);
+      const parallelLat = Date.now() - retrievalStart;
+      void parallelLat;
 
-      // Pipeline 2: Basic RAG — full retrieved passages as context (many tokens)
-      const ragStart = Date.now();
-      const ragResp = await callLLM({
-        provider, model: selectedModel,
-        messages: [
-          { role: "system", content: "Answer using the provided context. Be concise, 1–5 words if possible." },
-          { role: "user", content: `Context:\n${ragContext}\n\nQuestion: ${sample.question}\n\nAnswer:` },
-        ],
-        temperature: 0, maxTokens: 64,
-      });
-      const ragLat = Date.now() - ragStart;
-
-      // Pipeline 3: GraphRAG — compact entity descriptions (pre-indexed at ingest time → few tokens)
-      const graphStart = Date.now();
-      const graphResp = await callLLM({
-        provider, model: selectedModel,
-        messages: [
-          { role: "system", content: "Using the pre-indexed knowledge graph entity descriptions, answer concisely in 1–5 words." },
-          { role: "user", content: `Graph Entities:\n${graphContext}\n\nQuestion: ${sample.question}\n\nAnswer:` },
-        ],
-        temperature: 0, maxTokens: 64,
-      });
-      const graphLat = Date.now() - graphStart;
-
-      const llmF1 = computeF1(llmResp.content, sample.answer);
-      const bF1 = computeF1(ragResp.content, sample.answer);
-      const gF1 = computeF1(graphResp.content, sample.answer);
-
-      results.push({
+      return {
         idx: i, query: sample.question, gold: sample.answer, type: sample.type,
         llmonly_answer: llmResp.content, baseline_answer: ragResp.content, graphrag_answer: graphResp.content,
-        llmonly_f1: +llmF1.toFixed(4), baseline_f1: +bF1.toFixed(4), graphrag_f1: +gF1.toFixed(4),
+        llmonly_f1: +computeF1(llmResp.content, sample.answer).toFixed(4),
+        baseline_f1: +computeF1(ragResp.content, sample.answer).toFixed(4),
+        graphrag_f1: +computeF1(graphResp.content, sample.answer).toFixed(4),
         llmonly_em: computeEM(llmResp.content, sample.answer),
         baseline_em: computeEM(ragResp.content, sample.answer),
         graphrag_em: computeEM(graphResp.content, sample.answer),
         llmonly_tokens: llmResp.totalTokens, baseline_tokens: ragResp.totalTokens, graphrag_tokens: graphResp.totalTokens,
         llmonly_cost: llmResp.costUsd, baseline_cost: ragResp.costUsd, graphrag_cost: graphResp.costUsd,
-        llmonly_latency: llmLat, baseline_latency: ragLat, graphrag_latency: graphLat,
+        llmonly_latency: llmLat, baseline_latency: ragResp.latencyMs, graphrag_latency: graphResp.latencyMs,
         chunks_source: chunksSource,
-      });
+      };
+    })
+  );
 
-      totalLlmF1 += llmF1; totalBaselineF1 += bF1; totalGraphragF1 += gF1;
-      totalLlmEM += computeEM(llmResp.content, sample.answer);
-      totalBaselineEM += computeEM(ragResp.content, sample.answer);
-      totalGraphragEM += computeEM(graphResp.content, sample.answer);
-      totalLlmTokens += llmResp.totalTokens;
-      totalBaselineTokens += ragResp.totalTokens;
-      totalGraphragTokens += graphResp.totalTokens;
-      totalLlmCost += llmResp.costUsd; totalBaselineCost += ragResp.costUsd; totalGraphragCost += graphResp.costUsd;
-      totalLlmLatency += llmLat; totalBaselineLatency += ragLat; totalGraphragLatency += graphLat;
-    } catch (err) {
-      console.error(`Benchmark query ${i} failed:`, err);
-    }
+  settled.forEach((s, i) => { if (s.status === "rejected") console.error(`Benchmark query ${i} failed:`, s.reason); });
+  const results: Record<string, unknown>[] = settled
+    .filter(s => s.status === "fulfilled")
+    .map(s => (s as PromiseFulfilledResult<Record<string, unknown>>).value);
+
+  let totalLlmF1 = 0, totalBaselineF1 = 0, totalGraphragF1 = 0;
+  let totalLlmEM = 0, totalBaselineEM = 0, totalGraphragEM = 0;
+  let totalLlmTokens = 0, totalBaselineTokens = 0, totalGraphragTokens = 0;
+  let totalLlmCost = 0, totalBaselineCost = 0, totalGraphragCost = 0;
+  let totalLlmLatency = 0, totalBaselineLatency = 0, totalGraphragLatency = 0;
+
+  for (const r of results) {
+    totalLlmF1 += r.llmonly_f1 as number; totalBaselineF1 += r.baseline_f1 as number; totalGraphragF1 += r.graphrag_f1 as number;
+    totalLlmEM += r.llmonly_em as number; totalBaselineEM += r.baseline_em as number; totalGraphragEM += r.graphrag_em as number;
+    totalLlmTokens += r.llmonly_tokens as number; totalBaselineTokens += r.baseline_tokens as number; totalGraphragTokens += r.graphrag_tokens as number;
+    totalLlmCost += r.llmonly_cost as number; totalBaselineCost += r.baseline_cost as number; totalGraphragCost += r.graphrag_cost as number;
+    totalLlmLatency += r.llmonly_latency as number; totalBaselineLatency += r.baseline_latency as number; totalGraphragLatency += r.graphrag_latency as number;
   }
 
   const n = results.length || 1;
