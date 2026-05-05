@@ -1,3 +1,21 @@
+---
+title: GraphRAG Inference Hackathon
+emoji: 🔍
+colorFrom: orange
+colorTo: blue
+sdk: static
+pinned: false
+license: mit
+tags:
+  - graphrag
+  - tigergraph
+  - rag
+  - knowledge-graph
+  - benchmarking
+  - llm
+  - inference
+---
+
 # 🔍 GraphRAG Inference Hackathon — 3-Pipeline Benchmarking System
 
 <div align="center">
