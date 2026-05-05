@@ -7,7 +7,7 @@
 [![14 Novelties](https://img.shields.io/badge/Novelties-14_Techniques-0072CE?style=for-the-badge)](#-14-novel-techniques)
 [![12 LLMs](https://img.shields.io/badge/LLMs-12_Providers-5865F2?style=for-the-badge)](#-12-llm-providers)
 [![12 Papers](https://img.shields.io/badge/Papers-12_Cited-cc785c?style=for-the-badge)](#-references)
-[![55 Tests](https://img.shields.io/badge/Tests-55_Passing-5db872?style=for-the-badge)](#-testing)
+[![50 Tests](https://img.shields.io/badge/Tests-50_Passing-5db872?style=for-the-badge)](#-testing)
 
 **One query in → three pipelines run → side-by-side responses + metrics out.**
 
@@ -76,24 +76,13 @@ At 1M queries/month: $19,000/month saved vs Basic RAG, with higher accuracy.
 
 <div align="center">
 
-### 3-Pipeline Dashboard in Action
+### Benchmark Pipeline — Live Run
 
-<!-- Replace with actual GIF after recording -->
-![Dashboard Demo](https://via.placeholder.com/800x450.png?text=3-Pipeline+Dashboard+Demo+GIF)
+<video src="demo/benchmark.mp4" controls width="100%">
+  <a href="demo/benchmark.mp4">▶ Watch benchmark demo (MP4, 3.8 MB)</a>
+</video>
 
-**To record your own demo:**
-```bash
-# Launch the Next.js dashboard
-cd web && npm install && cp .env.example .env  # add OPENAI_API_KEY
-npm run dev
-# → http://localhost:3000
-
-# Navigate to /playground, type a science question, watch 3 pipelines respond
-# Navigate to /benchmarks, click Run Benchmark to see all 10 queries evaluated
-
-# Screen record with OBS / Kap / Win+G, then convert:
-# ffmpeg -i demo.mp4 -vf "fps=10,scale=800:-1" demo.gif
-```
+> All 10 Wikipedia science questions evaluated simultaneously — LLM-Only, Basic RAG, and GraphRAG pipelines running in parallel. Shows LLM-as-a-Judge PASS/FAIL, BERTScore, token reduction, and cost comparison in real time.
 
 </div>
 
