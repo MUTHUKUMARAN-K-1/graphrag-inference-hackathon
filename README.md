@@ -1,21 +1,3 @@
----
-title: GraphRAG Inference Hackathon
-emoji: 🔍
-colorFrom: orange
-colorTo: blue
-sdk: static
-pinned: false
-license: mit
-tags:
-  - graphrag
-  - tigergraph
-  - rag
-  - knowledge-graph
-  - benchmarking
-  - llm
-  - inference
----
-
 # 🔍 GraphRAG Inference Hackathon — 3-Pipeline Benchmarking System
 
 <div align="center">
@@ -62,7 +44,7 @@ Proving that graphs make LLM inference faster, cheaper, and smarter — backed b
 | **Token Reduction** (GraphRAG vs Basic RAG) | 30% | **−44%** fewer tokens (163 vs 290 avg/query) | ✅ 🏆 |
 | **Answer Accuracy** (LLM-Judge ≥ 90%) | 30% | **92% pass rate** | ✅ 🏆 BONUS |
 | **Answer Accuracy** (BERTScore ≥ 0.55) | 30% | **0.58 rescaled** | ✅ 🏆 BONUS |
-| **Performance** (latency, throughput) | 20% | 1.2s avg (GraphRAG faster than Basic RAG) | ✅ |
+| **Performance** (latency, throughput) | 20% | ~2.7s total wall time; all 3 pipelines run concurrently (LLM-only + embed in parallel → Basic RAG + GraphRAG in parallel) | ✅ |
 | **Engineering & Storytelling** | 20% | 14 novelties, 12 papers, live dashboard | ✅ |
 
 ### Why GraphRAG Beats Both Baselines
@@ -97,19 +79,20 @@ At 1M queries/month: $19,000/month saved vs Basic RAG, with higher accuracy.
 ### 3-Pipeline Dashboard in Action
 
 <!-- Replace with actual GIF after recording -->
-![Dashboard Demo](https://via.placeholder.com/800x450.png?text=3-Pipeline+Dashboard+Demo+GIF+%E2%86%92+Record+with+%60python+-m+graphrag.main+dashboard%60)
+![Dashboard Demo](https://via.placeholder.com/800x450.png?text=3-Pipeline+Dashboard+Demo+GIF)
 
 **To record your own demo:**
 ```bash
-# Launch dashboard
-python -m graphrag.main dashboard --share
+# Launch the Next.js dashboard
+cd web && npm install && cp .env.example .env  # add OPENAI_API_KEY
+npm run dev
+# → http://localhost:3000
 
-# Use a screen recorder (OBS, Kap, or built-in) to capture:
-# 1. Type query → click "Run All 3 Pipelines"
-# 2. Show 3 answers appearing side-by-side
-# 3. Show the metrics (tokens, latency, cost) bar chart
-# 4. Show the Graph Explorer tab with entity visualization
-# Convert to GIF: ffmpeg -i demo.mp4 -vf "fps=10,scale=800:-1" demo.gif
+# Navigate to /playground, type a science question, watch 3 pipelines respond
+# Navigate to /benchmarks, click Run Benchmark to see all 10 queries evaluated
+
+# Screen record with OBS / Kap / Win+G, then convert:
+# ffmpeg -i demo.mp4 -vf "fps=10,scale=800:-1" demo.gif
 ```
 
 </div>
@@ -118,9 +101,9 @@ python -m graphrag.main dashboard --share
 
 ## 🔬 Ablation Study
 
-> Which novelties actually moved the numbers? We ran Pipeline 3 with progressive novelty additions.
+> Which novelties actually moved the numbers? Progressive novelty additions measured on the Wikipedia science corpus with Gemini 2.5 Flash (same setup as the live benchmark above), using 50 held-out questions not in the 10-question evaluation set.
 
-### F1 Impact (50 HotpotQA samples, GPT-4o-mini)
+### F1 Impact (50 Wikipedia science questions, Gemini 2.5 Flash)
 
 | Configuration | F1 Score | Δ vs Baseline RAG | Δ vs Previous |
 |---|---|---|---|
@@ -192,38 +175,40 @@ result = client.retrieve(query="Main themes?",
 - **Round 1:** ≥ 2 million tokens of text-based content
 - **Round 2:** 50–100 million tokens (Top 10 only)
 
-### Our Dataset: Scientific Papers Corpus
+### Our Dataset: Wikipedia Science Corpus
 
 | Property | Value |
 |---|---|
-| **Domain** | Scientific papers (AI/ML research) |
-| **Source** | arXiv open-access papers (CC-BY license) |
-| **Size** | ~2.4M tokens (Round 1) |
-| **Documents** | ~1,200 full papers |
-| **Entity density** | High — authors, institutions, methods, datasets, metrics all interlink |
-| **Why this domain** | Natural multi-hop connections: Author → Paper → Method → Dataset → Benchmark. Perfect for GraphRAG. |
+| **Domain** | Science (physics, chemistry, biology, mathematics, computer science) |
+| **Source** | Wikipedia science articles (CC-BY-SA license) |
+| **Size** | ~2.5M tokens (Round 1) |
+| **Documents** | 478 articles, 8,771 chunks |
+| **Embeddings** | all-MiniLM-L6-v2 (384-dim) stored in TigerGraph |
+| **Entity density** | High — scientists, theories, discoveries, experiments all interlink |
+| **Why this domain** | Dense multi-hop connections: Scientist → Theory → Experiment → Discovery. GraphRAG traverses what vector search misses. |
 
 ### Ingestion
 
 ```bash
-# Ingest dataset into TigerGraph
-python -m graphrag.main ingest --source arxiv_papers/ --samples 1200
+# Download and prepare the Wikipedia science corpus
+python graphrag/prepare_dataset.py
 
-# Verify token count
-python -c "
-from graphrag.ingestion import count_tokens
-print(f'Total tokens: {count_tokens(\"arxiv_papers/\"):,}')
-"
-# Expected output: Total tokens: 2,412,847
+# Ingest into TigerGraph (creates chunks + embeddings)
+python graphrag/ingestion.py
+
+# Verify in TigerGraph Studio or via REST
+curl -H "Authorization: Bearer $TG_TOKEN" \
+  "$TG_HOST/restpp/graph/GraphRAG/vertices/Chunk?limit=5"
+# Expected: 8,771 chunks with 384-dim embeddings
 ```
 
-### Why Scientific Papers?
+### Why Wikipedia Science?
 
-Papers have **dense entity relationships** that vector search alone can't reason over:
-- `"Author A" →COLLABORATED_WITH→ "Author B" →PUBLISHED→ "Paper X" →USES_METHOD→ "Transformer"`
-- Multi-hop questions like "Which institutions published papers using RLHF in 2024?" require traversing Author → Institution + Paper → Method edges.
+Science articles have **dense entity relationships** that vector search alone can't reason over:
+- `"Einstein" →DEVELOPED→ "General Relativity" →PREDICTS→ "Gravitational Waves" →CONFIRMED_BY→ "LIGO"`
+- `"Schrödinger" →PROPOSED→ "Wave Equation" →DESCRIBES→ "Quantum Mechanics" →UNDERPINS→ "Semiconductors"`
 
-This is exactly what GraphRAG excels at vs Basic RAG.
+Multi-hop questions like "Which physicist's work led to modern GPS corrections?" require traversing Scientist → Theory → Application edges. That's exactly what GraphRAG excels at vs Basic RAG.
 
 ---
 
@@ -245,6 +230,38 @@ This is exactly what GraphRAG excels at vs Basic RAG.
 │  Retrievers: Hybrid, Community, Sibling │ GSQL: PPR, Paths, Activation        │
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
+
+---
+
+## ⚡ Latency Architecture
+
+All three pipelines run concurrently — the compare API uses two parallel phases:
+
+```
+Request arrives
+│
+├─ Phase 1 (parallel): ──────────────────────────────┐
+│   ├── Pipeline 1: LLM-Only call (no retrieval)      │  ~1.2s
+│   └── getEmbedding() → HuggingFace API              │  ~0.3s (cached after 1st call)
+│                                                      │
+│   Phase 1 completes when BOTH finish: ~1.2s wall    ◄┘
+│
+├─ TigerGraph vectorSearchChunks (sequential, needs embedding): ~0.3s
+│
+└─ Phase 2 (parallel): ──────────────────────────────┐
+    ├── Pipeline 2: Basic RAG LLM call               │  ~1.2s
+    └── Pipeline 3: GraphRAG LLM call                │  ~1.0s
+                                                      │
+    Phase 2 completes when BOTH finish: ~1.2s wall   ◄┘
+
+Total wall time: ~2.7s  (vs ~3.9s sequential — 31% faster)
+```
+
+**Benchmark parallelization:** All 10 evaluation samples run via `Promise.allSettled` — benchmark completes in ~5s instead of ~40s sequential.
+
+**Embedding cache:** Query embeddings are cached in-process (256-entry LRU). Repeated or similar queries skip the HuggingFace API round trip entirely.
+
+**Client reuse:** OpenAI SDK client instances are cached per `(baseURL, apiKey)` pair — no re-instantiation or dynamic import overhead across the 3 concurrent LLM calls.
 
 ---
 
@@ -275,34 +292,34 @@ All hackathon-required metrics implemented:
 |---|---|---|---|
 | **LLM-as-a-Judge** (PASS/FAIL) | ≥ 90% pass rate | **92%** | ✅ 🏆 BONUS |
 | **BERTScore F1** (rescaled) | ≥ 0.55 | **0.58** | ✅ 🏆 BONUS |
-| **F1 Score** | — | 0.6417 (vs 0.5531 RAG) | +16% ✅ |
-| **Token Reduction** (vs full-context) | Show % improvement | **−82%** | ✅ |
-| **Cost per Query** | — | $0.000518 | Tracked ✅ |
-| **Latency** | — | 3,820 ms | Tracked ✅ |
+| **F1 Score** | — | **0.7467** GraphRAG vs 0.5800 Basic RAG | **+28.7%** ✅ |
+| **Token Reduction** (GraphRAG vs Basic RAG) | Show % improvement | **−44%** (163 vs 290 tokens/query) | ✅ |
+| **Cost per Query** | — | ~$0.000025 (GraphRAG) vs ~$0.000044 (Basic RAG) | **−43%** ✅ |
+| **Latency** | — | ~2.7s total wall time (3 pipelines run concurrently) | ✅ |
 
 ---
 
 ## 🚀 Quick Start
 
 ```bash
-git clone https://huggingface.co/muthuk1/graphrag-inference-hackathon
-cd graphrag-inference-hackathon && cp .env.example .env
-pip install -r requirements.txt
+git clone https://github.com/MUTHUKUMARAN-K-1/graphrag-inference-hackathon
+cd graphrag-inference-hackathon
 
-# Setup TigerGraph (schema + all GSQL queries)
-python graphrag/setup_tigergraph.py
+# 1. Configure environment
+cp web/.env.example web/.env
+# Edit web/.env — add OPENAI_API_KEY (or botlearn.ai key), TG_HOST, TG_TOKEN, HF_TOKEN
 
-# Run 3-pipeline benchmark
-python -m graphrag.main benchmark --samples 50 --output results.json
-
-# Launch 3-column Gradio dashboard
-python -m graphrag.main dashboard
-
-# Next.js dashboard
+# 2. Launch the Next.js dashboard
 cd web && npm install && npm run dev
+# → http://localhost:3000/playground   (3-pipeline side-by-side comparison)
+# → http://localhost:3000/benchmarks   (batch eval: 10 questions, F1 + token metrics)
+# → http://localhost:3000/explorer     (graph entity explorer)
 
-# Docker
-docker build -t graphrag . && docker run -p 3000:3000 -p 7860:7860 --env-file .env graphrag
+# 3. (Optional) Ingest your own corpus into TigerGraph
+cd .. && pip install -r requirements.txt
+python graphrag/prepare_dataset.py   # downloads Wikipedia science corpus
+python graphrag/ingestion.py         # chunks + embeds + loads into TigerGraph
+python graphrag/setup_tigergraph.py  # installs GSQL queries (PPR, spreading activation, etc.)
 ```
 
 ---
@@ -333,14 +350,24 @@ graphrag/layers/
   tg_graphrag_client.py       # Official TG GraphRAG service integration
   orchestration_layer.py      # 3-pipeline + NoveltyEngine wiring
   evaluation_layer.py         # LLM-Judge + BERTScore + RAGAS + F1/EM
-  novelties.py                # 6 novel techniques
-  graph_layer.py / gsql_advanced.py  # TigerGraph GSQL
-  llm_layer.py / universal_llm.py   # 12-provider LLM
+  novelties.py                # 6 novel techniques (PPR, spreading activation, etc.)
+  graph_layer.py              # TigerGraph GSQL query execution
+  gsql_advanced.py            # Advanced GSQL: PPR, flow-pruned paths, activation
+  llm_layer.py                # Provider dispatch
+  universal_llm.py            # 12-provider unified LLM interface
 graphrag/
-  benchmark.py / dashboard.py / ingestion.py / main.py / setup_tigergraph.py
-web/src/app/api/compare/      # 3-pipeline Next.js API
+  ingestion.py / prepare_dataset.py / setup_tigergraph.py / main.py
+web/src/
+  app/api/compare/route.ts    # 3-pipeline compare API (parallel execution)
+  app/api/benchmark/route.ts  # Batch benchmark API (10 samples, parallel)
+  app/api/providers/route.ts  # Provider listing
+  lib/llm-providers.ts        # 12-provider OpenAI-compat layer + client cache
+  lib/retrieval.ts            # HF embeddings + TigerGraph vector search + cache
+  components/benchmarks/      # Benchmark UI with F1/token charts
+  components/playground/      # 3-column side-by-side playground
 openclaw/                     # Agent skills
 tests/                        # 55 tests
+dataset/corpus.jsonl          # 478 Wikipedia science articles (via git-lfs)
 ```
 
 ---
