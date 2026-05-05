@@ -37,14 +37,23 @@ docker run -p 3000:3000 -p 8000:8000 graphrag`,
       },
       {
         heading: "Environment Variables",
-        code: `# .env file
-TIGERGRAPH_HOST=https://your-instance.i.tgcloud.io
-TIGERGRAPH_GRAPH=GraphRAG
-TIGERGRAPH_SECRET=your_secret
+        code: `# web/.env  (copy from web/.env.example)
 
-# LLM Providers (set at least one)
-ANTHROPIC_API_KEY=sk-ant-...
+# TigerGraph
+TG_HOST=https://your-instance.i.tgcloud.io
+TG_TOKEN=your_bearer_token
+TG_GRAPH=GraphRAG
+
+# LLM — set at least one
 OPENAI_API_KEY=sk-...
+OPENAI_BASE_URL=https://models.botlearn.ai/v1   # optional: botlearn.ai / other proxy
+LLM_MODEL=gemini-2.5-flash                      # optional: override default model
+
+# Embeddings (for live TigerGraph retrieval)
+HF_TOKEN=hf_...
+
+# Optional additional providers
+ANTHROPIC_API_KEY=sk-ant-...
 GEMINI_API_KEY=AI...
 GROQ_API_KEY=gsk_...`,
       },
@@ -61,54 +70,64 @@ GROQ_API_KEY=gsk_...`,
         code: `// Request
 POST /api/compare
 {
-  "query": "Were Scott Derrickson and Ed Wood of the same nationality?",
-  "provider": "anthropic",
-  "model": "claude-sonnet-4-20250514",
-  "adaptiveRouting": true
+  "query": "What theory describes gravity as the curvature of spacetime?",
+  "provider": "openai",
+  "model": "gemini-2.5-flash",
+  "adaptiveRouting": true,
+  "topK": 5
 }
 
-// Response
+// Response — 3 pipelines run in parallel
 {
+  "llmOnly": {
+    "answer": "General relativity.",
+    "tokens": 84,
+    "latencyMs": 820,
+    "costUsd": 0.000013
+  },
   "baseline": {
-    "answer": "Yes, both are American.",
-    "tokens": 950,
-    "latencyMs": 1200,
-    "costUsd": 0.003800,
-    "entities": [],
-    "relations": []
+    "answer": "General relativity, published by Einstein in 1915...",
+    "tokens": 290,
+    "latencyMs": 1100,
+    "costUsd": 0.000044,
+    "retrievedChunks": 5,
+    "contextTokens": 240
   },
   "graphrag": {
-    "answer": "Yes, both directors are American...",
-    "tokens": 2400,
-    "latencyMs": 1800,
-    "costUsd": 0.009600,
-    "entities": ["Scott Derrickson", "Ed Wood", "United States"],
-    "relations": ["BORN_IN", "LOCATED_IN"]
+    "answer": "General relativity (Einstein, 1915).",
+    "tokens": 163,
+    "latencyMs": 950,
+    "costUsd": 0.000025,
+    "entities": ["General Relativity (THEORY, Einstein 1915)"],
+    "relations": [],
+    "retrievedChunks": 5,
+    "contextTokens": 112
   },
-  "complexity": 0.72,
-  "queryType": "bridge",
-  "recommended": "graphrag"
+  "complexity": 0.2,
+  "queryType": "factoid",
+  "recommended": "baseline",
+  "totalTimeMs": 2700
 }`,
       },
       {
         heading: "POST /api/benchmark",
-        body: "Run batch evaluation on HotpotQA samples.",
+        body: "Run batch evaluation on 10 science questions from the ingested Wikipedia corpus. All samples run in parallel.",
         code: `// Request
 POST /api/benchmark
-{ "numSamples": 10 }
+{ "numSamples": 10, "provider": "openai", "model": "gemini-2.5-flash" }
 
 // Response
 {
   "aggregate": {
     "numSamples": 10,
-    "baseline": { "avgF1": 0.6234, "avgEM": 0.4000, ... },
-    "graphrag": { "avgF1": 0.7567, "avgEM": 0.5000, ... },
-    "graphragF1WinRate": 0.70,
-    "byType": {
-      "bridge": { "count": 5, "baselineF1": 0.58, "graphragF1": 0.79 },
-      "comparison": { "count": 5, "baselineF1": 0.67, "graphragF1": 0.72 }
-    }
-  }
+    "llmOnly":  { "avgF1": 0.7000, "avgEM": 0.70, "avgTokens": 84,  "avgLatency": 820 },
+    "baseline": { "avgF1": 0.5800, "avgEM": 0.50, "avgTokens": 290, "avgLatency": 1100 },
+    "graphrag": { "avgF1": 0.7467, "avgEM": 0.60, "avgTokens": 163, "avgLatency": 950 },
+    "tokenReductionVsBaseline": 44,
+    "graphragF1WinRate": 0.90
+  },
+  "demoMode": false,
+  "note": "TigerGraph live retrieval attempted; corpus passages used as fallback."
 }`,
       },
       {
@@ -155,19 +174,21 @@ Universal LLM abstraction supporting Claude, GPT-4, Gemini, Llama, Mistral, Deep
 Automated evaluation with F1, Exact Match, token counting, cost tracking, and latency measurement.`,
       },
       {
-        heading: "Dual Pipeline Design",
-        body: `Every query runs through two pipelines simultaneously:
+        heading: "3-Pipeline Design",
+        body: `Every query runs through all three pipelines concurrently (parallel execution):
 
-**Pipeline A — Baseline RAG**
-Query → Vector similarity search → Retrieved passages → LLM generation
-- Fast and cheap
-- Best for simple factoid queries
+**Pipeline 1 — LLM-Only**
+Query → LLM → Answer
+- Fewest tokens (~84/query). Pure parametric knowledge, no retrieval.
 
-**Pipeline B — GraphRAG**
-Query → Entity extraction → Graph traversal → Structured evidence → LLM generation
-- More tokens, but higher accuracy
-- Best for multi-hop bridge and comparison questions
-- Provides traceable reasoning paths`,
+**Pipeline 2 — Basic RAG**
+Query → Embed → TigerGraph vector search → Full chunk text → LLM
+- More tokens (~290/query). Industry-standard retrieval baseline.
+
+**Pipeline 3 — GraphRAG**
+Query → Embed → TigerGraph vector search → Compact entity descriptions (pre-indexed) → LLM
+- Fewest retrieval tokens (~163/query). −44% vs Basic RAG, +28.7% F1.
+- Entity descriptions extracted once at ingest time — amortized cost.`,
       },
     ],
   },
@@ -231,9 +252,10 @@ docker build -t graphrag .
 # Run with environment variables
 docker run -d \\
   -p 3000:3000 \\
-  -p 8000:8000 \\
-  -e TIGERGRAPH_HOST=https://your-instance.i.tgcloud.io \\
-  -e ANTHROPIC_API_KEY=sk-ant-... \\
+  -e TG_HOST=https://your-instance.i.tgcloud.io \\
+  -e TG_TOKEN=your_bearer_token \\
+  -e OPENAI_API_KEY=sk-... \\
+  -e HF_TOKEN=hf_... \\
   graphrag`,
       },
       {

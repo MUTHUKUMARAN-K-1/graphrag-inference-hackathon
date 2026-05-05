@@ -250,7 +250,7 @@ export function ArchitectureContent() {
               { name: "Recharts", role: "Visualizations", icon: "📊" },
               { name: "Docker", role: "Deployment", icon: "🐳" },
               { name: "RAGAS", role: "Evaluation", icon: "📋" },
-              { name: "HotpotQA", role: "Benchmark Data", icon: "📚" },
+              { name: "Wikipedia Science", role: "Benchmark Data", icon: "📚" },
             ].map((tech, i) => (
               <div key={i} className="card card-hover text-center" style={{ padding: "28px 16px" }}>
                 <div style={{ fontSize: "2rem", marginBottom: "8px" }}>{tech.icon}</div>

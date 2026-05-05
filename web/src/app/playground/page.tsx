@@ -11,7 +11,7 @@ export default function PlaygroundPage() {
           <div className="badge-glow mb-4" style={{ fontSize: "0.75rem" }}>⚡ Live Demo</div>
           <h1 className="display-xl mb-3">Playground</h1>
           <p className="body-lg mx-auto" style={{ maxWidth: "560px", color: "var(--color-muted)" }}>
-            Ask any question and watch Baseline RAG race against GraphRAG in real-time.
+            Ask any question and watch all 3 pipelines run simultaneously — LLM-Only, Basic RAG, and GraphRAG.
             Compare answers, tokens, latency, and cost side-by-side.
           </p>
         </div>
