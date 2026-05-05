@@ -263,11 +263,14 @@ export function ExplorerContent() {
     ? visibleEdges.filter(e => e.source === selectedNode || e.target === selectedNode)
     : [];
 
+  const [liveAnswer, setLiveAnswer] = useState<string | null>(null);
+
   const runLiveQuery = useCallback(async () => {
     if (!liveQuery.trim()) return;
     setLiveLoading(true);
     setLiveError("");
     setLiveGraph(null);
+    setLiveAnswer(null);
     try {
       const res = await fetch("/api/compare", {
         method: "POST",
@@ -276,13 +279,18 @@ export function ExplorerContent() {
       });
       const data = await res.json();
       const entities: string[] = data.graphrag?.entities ?? [];
+      const answer: string = data.graphrag?.answer ?? "";
       if (entities.length === 0) {
-        setLiveError("No entities returned — TigerGraph retrieval returned 0 chunks. Demo mode may be active.");
+        setLiveAnswer(answer || null);
+        setLiveError(
+          "No graph entities found for this query — the Wikipedia science corpus covers physics, biology, " +
+          "chemistry, and astronomy. Try one of the example questions below."
+        );
       } else {
         setLiveGraph(buildLiveGraph(entities, liveQuery));
       }
     } catch {
-      setLiveError("Request failed. Check that the dev server is running and an API key is set.");
+      setLiveError("Request failed — check that the dev server is running and OPENAI_API_KEY is set in web/.env.");
     }
     setLiveLoading(false);
   }, [liveQuery]);
@@ -573,14 +581,35 @@ export function ExplorerContent() {
       {/* Live Query Section */}
       <div className="card mt-8 animate-fade-in-up">
         <div className="title-lg mb-2">🔴 Live Entity Query</div>
-        <p className="body-sm mb-6" style={{ color: "var(--color-muted)" }}>
-          Ask a science question. GraphRAG retrieves entities from TigerGraph and renders them as a live graph.
-          Requires <code>OPENAI_API_KEY</code> and <code>TG_HOST</code> in <code>web/.env</code>.
+        <p className="body-sm mb-4" style={{ color: "var(--color-muted)" }}>
+          Ask a <strong>science</strong> question — GraphRAG retrieves entities from TigerGraph and renders them
+          as a live graph. Corpus covers physics, biology, chemistry, and astronomy.
         </p>
+
+        {/* Example chips */}
+        <div className="flex flex-wrap gap-2 mb-5">
+          {[
+            "How do black holes form?",
+            "What is CRISPR and how does it edit DNA?",
+            "How does photosynthesis produce oxygen?",
+            "What causes quantum entanglement?",
+            "How does the immune system fight viruses?",
+          ].map(q => (
+            <button
+              key={q}
+              onClick={() => setLiveQuery(q)}
+              className="badge-outline"
+              style={{ cursor: "pointer", fontSize: "0.75rem", border: "none" }}
+            >
+              {q}
+            </button>
+          ))}
+        </div>
+
         <div className="flex gap-3 mb-5">
           <input
             className="input flex-1"
-            placeholder="e.g. What is the relationship between DNA and proteins?"
+            placeholder="e.g. How does DNA encode proteins?"
             value={liveQuery}
             onChange={e => setLiveQuery(e.target.value)}
             onKeyDown={e => { if (e.key === "Enter") runLiveQuery(); }}
@@ -599,6 +628,13 @@ export function ExplorerContent() {
         {liveError && (
           <div className="card-cream mb-4" style={{ padding: "12px 16px", borderLeft: "3px solid #e17055" }}>
             <span className="body-sm" style={{ color: "#d63031" }}>{liveError}</span>
+          </div>
+        )}
+
+        {liveAnswer && !liveGraph && (
+          <div className="card-cream mb-4" style={{ padding: "16px", borderLeft: "3px solid #0072CE" }}>
+            <div className="caption-uppercase mb-2" style={{ color: "#0072CE" }}>GraphRAG Answer</div>
+            <p className="body-sm" style={{ lineHeight: 1.65, color: "var(--color-body)" }}>{liveAnswer}</p>
           </div>
         )}
 
