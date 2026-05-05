@@ -82,6 +82,8 @@ At 1M queries/month: $19,000/month saved vs Basic RAG, with higher accuracy.
   <a href="demo/benchmark.mp4">▶ Watch benchmark demo (MP4, 3.8 MB)</a>
 </video>
 
+**[▶ Watch Demo Video](demo/benchmark.mp4)**
+
 > All 10 Wikipedia science questions evaluated simultaneously — LLM-Only, Basic RAG, and GraphRAG pipelines running in parallel. Shows LLM-as-a-Judge PASS/FAIL, BERTScore, token reduction, and cost comparison in real time.
 
 </div>
