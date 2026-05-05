@@ -23,11 +23,7 @@ export function Navbar() {
         {/* Logo */}
         <Link href="/" className="flex items-center gap-3 no-underline">
           <div className="relative">
-            <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
-              <circle cx="16" cy="16" r="14" stroke="#FF6B00" strokeWidth="2.5" />
-              <circle cx="16" cy="16" r="5" fill="#FF6B00" />
-              <path d="M16 2L16 30M2 16L30 16M5.5 5.5L26.5 26.5M26.5 5.5L5.5 26.5" stroke="#FF6B00" strokeWidth="1" strokeLinecap="round" opacity="0.4" />
-            </svg>
+            <img src="/tg-logo.webp" alt="TigerGraph" width={32} height={32} style={{ objectFit: "contain" }} />
             <div className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-success" style={{ boxShadow: '0 0 6px rgba(93,184,114,0.6)' }} />
           </div>
           <div>

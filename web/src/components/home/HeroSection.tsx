@@ -25,7 +25,7 @@ export function HeroSection() {
           <div>
             <div className="flex items-center gap-3 mb-8 animate-fade-in-up">
               <span className="badge-glow" style={{ fontSize: "0.75rem" }}>🏆 Hackathon 2025</span>
-              <span className="badge-outline" style={{ fontSize: "0.75rem" }}>TigerGraph × Claude</span>
+              <span className="badge-outline" style={{ fontSize: "0.75rem" }}>Powered by TigerGraph</span>
             </div>
 
             <h1 className="display-hero mb-8 animate-fade-in-up delay-100">
@@ -89,7 +89,7 @@ export function HeroSection() {
                   <span style={{ color: "#6c6a64" }}>{" = "}</span>
                   <span style={{ color: "#e8a55a" }}>UniversalLLM</span>
                   <span style={{ color: "#6c6a64" }}>(</span>
-                  <span style={{ color: "#cc785c" }}>&quot;claude-sonnet-4&quot;</span>
+                  <span style={{ color: "#cc785c" }}>&quot;gemini-2.5-flash&quot;</span>
                   <span style={{ color: "#6c6a64" }}>)</span>
                 </div>
                 <div style={{ paddingLeft: "24px" }}>
