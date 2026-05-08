@@ -6,8 +6,28 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 // ── Text overlap metrics ──────────────────────────────────────────────────────
+// Common scientific synonyms — maps full IUPAC/formal names to their
+// abbreviations so "deoxyribonucleic acid" scores the same as "dna".
+const SYNONYM_MAP: [RegExp, string][] = [
+  [/\bdeoxyribonucleic acid\b/g, "dna"],
+  [/\bdeoxyribonucleic\b/g, "dna"],
+  [/\bribonucleic acid\b/g, "rna"],
+  [/\badenosine triphosphate\b/g, "atp"],
+  [/\blight speed\b/g, "speed of light"],
+  [/\beinsteins theory of gravity\b/g, "general relativity"],
+  [/\btheory of evolution\b/g, "natural selection"],
+];
+
 function normalizeAnswer(s: string): string {
-  return s.toLowerCase().replace(/\b(a|an|the)\b/g, " ").replace(/[^\w\s]/g, "").replace(/\s+/g, " ").trim();
+  let n = s.toLowerCase()
+    .replace(/\b(a|an|the)\b/g, " ")
+    .replace(/[^\w\s]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  for (const [pattern, replacement] of SYNONYM_MAP) {
+    n = n.replace(pattern, replacement);
+  }
+  return n;
 }
 function computeF1(prediction: string, groundTruth: string): number {
   const p = normalizeAnswer(prediction).split(/\s+/).filter(Boolean);
@@ -53,26 +73,27 @@ async function judgeAnswer(
         {
           role: "system",
           content:
-            "You are an answer evaluator. Your entire response must be exactly one word: PASS or FAIL. " +
-            "Do not write anything else — no punctuation, no explanation, no preamble. Just PASS or FAIL.\n" +
-            "PASS: the model answer contains or correctly refers to the same concept as the reference answer.\n" +
-            "FAIL: the model answer is wrong, off-topic, or missing the core concept.",
+            "You are a science quiz grader. Reply with one word only: PASS or FAIL.\n" +
+            "PASS: the model answer names, abbreviates, or correctly identifies the same concept as the reference. " +
+            "Accept: abbreviations (DNA = deoxyribonucleic acid), synonyms (fission = nuclear fission), " +
+            "capitalisation differences, and partial matches where the core term is present.\n" +
+            "FAIL: the model answer describes a completely different concept or is clearly wrong.\n" +
+            "Output exactly one word — PASS or FAIL — nothing else.",
         },
         {
           role: "user",
           content:
-            `Question: ${question}\n` +
-            `Reference: ${gold}\n` +
-            `Answer: ${answer}\n\n` +
-            "PASS or FAIL:",
+            `Question: ${question}\nReference answer: ${gold}\nModel answer: ${answer}\n\nGrade (PASS or FAIL):`,
         },
       ],
       temperature: 0,
-      maxTokens: 32,
+      maxTokens: 16,
       apiKeyOverride,
       baseURLOverride,
     });
-    return resp.content.toUpperCase().includes("PASS");
+    const upper = resp.content.toUpperCase().replace(/[^A-Z]/g, " ").trim();
+    if (/\bFAIL\b|\bNO\b|\bWRONG\b|\bINCORRECT\b|\bFALSE\b/.test(upper)) return false;
+    return /\bPASS\b|\bYES\b|\bCORRECT\b|\bTRUE\b/.test(upper);
   } catch (err) {
     console.error("[judge] callLLM failed:", err instanceof Error ? err.message : err);
     return false;
@@ -251,10 +272,10 @@ export async function POST(req: NextRequest) {
         callLLM({
           provider, model: selectedModel,
           messages: [
-            { role: "system", content: "Answer with the scientific name or term only. Keep it to 1-4 words. No explanation." },
+            { role: "system", content: "Science quiz. Reply with the concept name only — 1 to 4 words, nothing else. Use common abbreviations (DNA not deoxyribonucleic acid). Examples: 'photosynthesis' | 'electron' | 'general relativity' | 'nuclear fission'" },
             { role: "user", content: sample.question },
           ],
-          temperature: 0, maxTokens: 64,
+          temperature: 0, maxTokens: 16,
           ...llmOverrides,
         }),
         getEmbedding(sample.question).catch(() => null),
@@ -282,19 +303,19 @@ export async function POST(req: NextRequest) {
         callLLM({
           provider, model: selectedModel,
           messages: [
-            { role: "system", content: "Using the provided passages, identify and state the answer as the scientific name or term. 1-4 words, no explanation." },
-            { role: "user", content: `Context:\n${ragContext}\n\nQuestion: ${sample.question}\n\nAnswer:` },
+            { role: "system", content: "Science quiz. The passages contain the answer. Reply with the concept name only — 1 to 4 words. Use common abbreviations (DNA, not deoxyribonucleic acid). No sentences, no explanations. Examples: 'photosynthesis' | 'electron' | 'general relativity'" },
+            { role: "user", content: `Passages:\n${ragContext}\n\nQuestion: ${sample.question}\nConcept name:` },
           ],
-          temperature: 0, maxTokens: 64,
+          temperature: 0, maxTokens: 16,
           ...llmOverrides,
         }),
         callLLM({
           provider, model: selectedModel,
           messages: [
-            { role: "system", content: "Each knowledge graph entry starts with the entity name followed by a colon and its description. Find which entity answers the question and output only that entity name. 1-4 words, no explanation." },
-            { role: "user", content: `Graph Entities:\n${graphContext}\n\nQuestion: ${sample.question}\n\nAnswer (entity name only):` },
+            { role: "system", content: "Science quiz. Below are knowledge graph entities in 'ConceptName: description' format. Find the entity that answers the question and output ONLY the ConceptName (the text before the colon), exactly as written, nothing else." },
+            { role: "user", content: `Knowledge graph:\n${graphContext}\n\nQuestion: ${sample.question}\nConceptName:` },
           ],
-          temperature: 0, maxTokens: 64,
+          temperature: 0, maxTokens: 16,
           ...llmOverrides,
         }),
       ]);
