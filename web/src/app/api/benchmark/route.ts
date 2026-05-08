@@ -4,6 +4,7 @@ import { getEmbedding, searchChunks, chunkToEntityContext } from "@/lib/retrieva
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+export const maxDuration = 300; // Vercel: allow up to 5 min for 4-batch benchmark run
 
 // ── Text overlap metrics ──────────────────────────────────────────────────────
 // Common scientific synonyms — maps full IUPAC/formal names to their
@@ -87,7 +88,7 @@ async function judgeAnswer(
         },
       ],
       temperature: 0,
-      maxTokens: 16,
+      maxTokens: 128,
       apiKeyOverride,
       baseURLOverride,
     });
@@ -290,7 +291,7 @@ export async function POST(req: NextRequest) {
             { role: "system", content: "Science quiz. Reply with the concept name only — 1 to 4 words, nothing else. Use common abbreviations (DNA not deoxyribonucleic acid). Examples: 'photosynthesis' | 'electron' | 'general relativity' | 'nuclear fission'" },
             { role: "user", content: sample.question },
           ],
-          temperature: 0, maxTokens: 32,
+          temperature: 0, maxTokens: 512,
           ...llmOverrides,
         }),
         getEmbedding(sample.question).catch(() => null),
@@ -326,7 +327,7 @@ export async function POST(req: NextRequest) {
             { role: "system", content: "Science quiz. The passages contain the answer. Reply with the concept name only — 1 to 4 words. Use common abbreviations (DNA, not deoxyribonucleic acid). No sentences, no explanations. Examples: 'photosynthesis' | 'electron' | 'general relativity'" },
             { role: "user", content: `Passages:\n${ragContext}\n\nQuestion: ${sample.question}\nConcept name:` },
           ],
-          temperature: 0, maxTokens: 32,
+          temperature: 0, maxTokens: 512,
           ...llmOverrides,
         }),
         callLLM({
@@ -335,7 +336,7 @@ export async function POST(req: NextRequest) {
             { role: "system", content: "Science quiz. The knowledge graph entry is in 'ConceptName: description' format. Output ONLY the ConceptName — the exact text before the colon. Nothing else." },
             { role: "user", content: `Knowledge graph:\n${graphContext}\n\nQuestion: ${sample.question}\nConceptName:` },
           ],
-          temperature: 0, maxTokens: 32,
+          temperature: 0, maxTokens: 512,
           ...llmOverrides,
         }),
       ]);
