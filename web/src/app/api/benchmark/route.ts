@@ -379,8 +379,7 @@ export async function POST(req: NextRequest) {
         graphrag_bertscore_rescaled:  +bertscoreRescaled.toFixed(4),
         chunks_source: chunksSource,
       };
-    })
-  );
+  });
 
   settled.forEach((s, i) => { if (s.status === "rejected") console.error(`Benchmark query ${i} failed:`, s.reason); });
   const results: Record<string, unknown>[] = settled
