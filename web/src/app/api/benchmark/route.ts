@@ -53,26 +53,28 @@ async function judgeAnswer(
         {
           role: "system",
           content:
-            "You are a strict answer evaluator. Respond with exactly one word: PASS or FAIL.\n" +
-            "PASS if the model answer correctly captures the key information from the reference answer (exact wording not required).\n" +
-            "FAIL if the model answer is wrong, irrelevant, or missing the core fact.",
+            "You are an answer evaluator. Your entire response must be exactly one word: PASS or FAIL. " +
+            "Do not write anything else — no punctuation, no explanation, no preamble. Just PASS or FAIL.\n" +
+            "PASS: the model answer contains or correctly refers to the same concept as the reference answer.\n" +
+            "FAIL: the model answer is wrong, off-topic, or missing the core concept.",
         },
         {
           role: "user",
           content:
             `Question: ${question}\n` +
-            `Reference Answer: ${gold}\n` +
-            `Model Answer: ${answer}\n\n` +
-            "Verdict (PASS or FAIL):",
+            `Reference: ${gold}\n` +
+            `Answer: ${answer}\n\n` +
+            "PASS or FAIL:",
         },
       ],
       temperature: 0,
-      maxTokens: 8,
+      maxTokens: 32,
       apiKeyOverride,
       baseURLOverride,
     });
     return resp.content.toUpperCase().includes("PASS");
-  } catch {
+  } catch (err) {
+    console.error("[judge] callLLM failed:", err instanceof Error ? err.message : err);
     return false;
   }
 }
@@ -249,10 +251,10 @@ export async function POST(req: NextRequest) {
         callLLM({
           provider, model: selectedModel,
           messages: [
-            { role: "system", content: "Answer the science question concisely in 1–5 words." },
+            { role: "system", content: "Answer with the exact scientific term or name only. 1–3 words maximum. No explanation, no punctuation, no sentence — just the term." },
             { role: "user", content: sample.question },
           ],
-          temperature: 0, maxTokens: 64,
+          temperature: 0, maxTokens: 32,
           ...llmOverrides,
         }),
         getEmbedding(sample.question).catch(() => null),
@@ -280,19 +282,19 @@ export async function POST(req: NextRequest) {
         callLLM({
           provider, model: selectedModel,
           messages: [
-            { role: "system", content: "Answer using the provided context. Be concise, 1–5 words if possible." },
-            { role: "user", content: `Context:\n${ragContext}\n\nQuestion: ${sample.question}\n\nAnswer:` },
+            { role: "system", content: "Using the provided passages, identify and output the exact answer term or name only. 1–3 words maximum. No explanation, no sentence — just the term." },
+            { role: "user", content: `Context:\n${ragContext}\n\nQuestion: ${sample.question}\n\nAnswer (term only):` },
           ],
-          temperature: 0, maxTokens: 64,
+          temperature: 0, maxTokens: 32,
           ...llmOverrides,
         }),
         callLLM({
           provider, model: selectedModel,
           messages: [
-            { role: "system", content: "Using the pre-indexed knowledge graph entity descriptions, answer concisely in 1–5 words." },
-            { role: "user", content: `Graph Entities:\n${graphContext}\n\nQuestion: ${sample.question}\n\nAnswer:` },
+            { role: "system", content: "Using the knowledge graph entity descriptions, identify and output the exact answer term or name only. 1–3 words maximum. No explanation, no sentence — just the term." },
+            { role: "user", content: `Graph Entities:\n${graphContext}\n\nQuestion: ${sample.question}\n\nAnswer (term only):` },
           ],
-          temperature: 0, maxTokens: 64,
+          temperature: 0, maxTokens: 32,
           ...llmOverrides,
         }),
       ]);
@@ -410,6 +412,7 @@ export async function POST(req: NextRequest) {
       avgBertscoreRescaled,
       bonusJudge,
       bonusBertscore,
+      bertscoreAvailable: bertscoreCount > 0,
     },
     provider, model: model || PROVIDERS[provider]?.defaultModel,
     demoMode: !hasKey,

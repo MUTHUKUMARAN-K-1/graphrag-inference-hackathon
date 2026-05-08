@@ -25,6 +25,7 @@ interface AggregateData {
   avgBertscoreRescaled?: number;
   bonusJudge?: boolean;
   bonusBertscore?: boolean;
+  bertscoreAvailable?: boolean;
   byType?: {
     bridge?: { count: number; baselineF1: number; graphragF1: number } | null;
     comparison?: { count: number; baselineF1: number; graphragF1: number } | null;
@@ -46,6 +47,7 @@ const DEMO_DATA: AggregateData = {
   avgBertscoreRescaled: 0.846,
   bonusJudge: false,
   bonusBertscore: true,
+  bertscoreAvailable: true,
   byType: {
     bridge: { count: 5, baselineF1: 0.7400, graphragF1: 0.8200 },
     comparison: { count: 5, baselineF1: 0.8200, graphragF1: 0.8000 },
@@ -131,9 +133,9 @@ export function BenchmarkContent() {
         "─".repeat(70),
         "ACCURACY EVALUATION (hackathon required criteria)",
         "─".repeat(70),
-        `${"LLM-as-a-Judge Pass Rate".padEnd(28)}${col((a.baselineJudgePassRate ?? 0 * 100).toFixed(1) + "%")}${((a.graphragJudgePassRate ?? 0) * 100).toFixed(1)}% ${(a.graphragJudgePassRate ?? 0) >= 0.90 ? "✅ BONUS" : `(need ≥90%)`}`,
-        `${"BERTScore Raw".padEnd(28)}${col("")}${(a.avgBertscoreRaw ?? 0).toFixed(4)} ${(a.avgBertscoreRaw ?? 0) >= 0.88 ? "✅ BONUS" : `(need ≥0.88)`}`,
-        `${"BERTScore Rescaled".padEnd(28)}${col("")}${(a.avgBertscoreRescaled ?? 0).toFixed(4)} ${(a.avgBertscoreRescaled ?? 0) >= 0.55 ? "✅ BONUS" : `(need ≥0.55)`}`,
+        `${"LLM-as-a-Judge Pass Rate".padEnd(28)}${col(((a.baselineJudgePassRate ?? 0) * 100).toFixed(1) + "%")}${((a.graphragJudgePassRate ?? 0) * 100).toFixed(1)}% ${(a.graphragJudgePassRate ?? 0) >= 0.90 ? "✅ BONUS" : "(need ≥90%)"}`,
+        `${"BERTScore Raw".padEnd(28)}${col("")}${a.bertscoreAvailable === false ? "N/A (set HF_TOKEN)" : (a.avgBertscoreRaw ?? 0).toFixed(4) + " " + ((a.avgBertscoreRaw ?? 0) >= 0.88 ? "✅ BONUS" : "(need ≥0.88)")}`,
+        `${"BERTScore Rescaled".padEnd(28)}${col("")}${a.bertscoreAvailable === false ? "N/A (set HF_TOKEN)" : (a.avgBertscoreRescaled ?? 0).toFixed(4) + " " + ((a.avgBertscoreRescaled ?? 0) >= 0.55 ? "✅ BONUS" : "(need ≥0.55)")}`,
         "",
         a.bonusJudge && a.bonusBertscore ? "🏆 MAXIMUM BONUS UNLOCKED — both accuracy thresholds hit!"
           : a.bonusBertscore ? "⭐ BERTScore bonus earned. Improve judge pass rate to ≥90% for max bonus."
@@ -371,36 +373,45 @@ export function BenchmarkContent() {
                     <div className="title-sm">BERTScore</div>
                     <div className="caption mt-0.5" style={{ color: "var(--color-muted)" }}>Semantic similarity via sentence embeddings</div>
                   </div>
-                  {(data.bonusBertscore)
-                    ? <span className="badge-orange" style={{ fontSize: "0.6875rem" }}>✓ Bonus</span>
-                    : <span className="badge-outline" style={{ fontSize: "0.6875rem" }}>Need ≥0.55R / ≥0.88</span>}
+                  {data.bertscoreAvailable === false
+                    ? <span className="badge-outline" style={{ fontSize: "0.6875rem", color: "var(--color-muted)" }}>HF_TOKEN needed</span>
+                    : data.bonusBertscore
+                      ? <span className="badge-orange" style={{ fontSize: "0.6875rem" }}>✓ Bonus</span>
+                      : <span className="badge-outline" style={{ fontSize: "0.6875rem" }}>Need ≥0.55R / ≥0.88</span>}
                 </div>
 
-                <div className="flex items-end gap-3 mb-4">
-                  <div className="metric-value" style={{ color: "#0072CE", fontSize: "2.5rem", lineHeight: 1 }}>
-                    {(data.avgBertscoreRaw ?? 0).toFixed(3)}
+                {data.bertscoreAvailable === false ? (
+                  <div style={{ padding: "16px", borderRadius: "8px", background: "rgba(108,106,100,0.06)", textAlign: "center" }}>
+                    <div className="body-sm" style={{ color: "var(--color-muted)", marginBottom: "6px" }}>
+                      BERTScore requires HuggingFace embeddings
+                    </div>
+                    <code style={{ fontSize: "0.75rem", color: "var(--color-tiger-orange)" }}>
+                      Set HF_TOKEN in Vercel environment variables
+                    </code>
                   </div>
-                  <div className="body-sm mb-1" style={{ color: "var(--color-muted)" }}>raw cosine F1</div>
-                </div>
-
-                {/* Progress bar */}
-                <div style={{ height: "8px", borderRadius: "4px", background: "#e6dfd8", position: "relative", marginBottom: "8px" }}>
-                  <div style={{
-                    height: "100%", borderRadius: "4px",
-                    width: `${Math.min(100, (data.avgBertscoreRaw ?? 0) * 100)}%`,
-                    background: (data.avgBertscoreRaw ?? 0) >= 0.88 ? "#5db872" : "#0072CE",
-                    transition: "width 0.5s ease",
-                  }} />
-                  {/* 0.88 raw marker */}
-                  <div style={{
-                    position: "absolute", top: "-4px", left: "88%",
-                    width: "2px", height: "16px", background: "#002B49", opacity: 0.4,
-                  }} />
-                </div>
-                <div className="flex justify-between caption" style={{ color: "var(--color-muted)" }}>
-                  <span>Rescaled: {(data.avgBertscoreRescaled ?? 0).toFixed(3)} (need ≥0.55)</span>
-                  <span>Raw threshold: 0.88</span>
-                </div>
+                ) : (
+                  <>
+                    <div className="flex items-end gap-3 mb-4">
+                      <div className="metric-value" style={{ color: "#0072CE", fontSize: "2.5rem", lineHeight: 1 }}>
+                        {(data.avgBertscoreRaw ?? 0).toFixed(3)}
+                      </div>
+                      <div className="body-sm mb-1" style={{ color: "var(--color-muted)" }}>raw cosine F1</div>
+                    </div>
+                    <div style={{ height: "8px", borderRadius: "4px", background: "#e6dfd8", position: "relative", marginBottom: "8px" }}>
+                      <div style={{
+                        height: "100%", borderRadius: "4px",
+                        width: `${Math.min(100, (data.avgBertscoreRaw ?? 0) * 100)}%`,
+                        background: (data.avgBertscoreRaw ?? 0) >= 0.88 ? "#5db872" : "#0072CE",
+                        transition: "width 0.5s ease",
+                      }} />
+                      <div style={{ position: "absolute", top: "-4px", left: "88%", width: "2px", height: "16px", background: "#002B49", opacity: 0.4 }} />
+                    </div>
+                    <div className="flex justify-between caption" style={{ color: "var(--color-muted)" }}>
+                      <span>Rescaled: {(data.avgBertscoreRescaled ?? 0).toFixed(3)} (need ≥0.55)</span>
+                      <span>Raw threshold: 0.88</span>
+                    </div>
+                  </>
+                )}
               </div>
             </div>
 
@@ -412,6 +423,7 @@ export function BenchmarkContent() {
                 Hitting both thresholds earns the maximum accuracy bonus.
                 BERTScore uses cosine similarity of{" "}
                 <code style={{ fontSize: "0.75rem" }}>all-MiniLM-L6-v2</code> sentence embeddings (rescale baseline = 0.20).
+                Requires <code style={{ fontSize: "0.75rem" }}>HF_TOKEN</code> environment variable.
               </p>
             </div>
           </div>
