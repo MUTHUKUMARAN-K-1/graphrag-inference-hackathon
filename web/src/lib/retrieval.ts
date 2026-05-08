@@ -69,12 +69,18 @@ export async function searchChunks(embedding: number[], topK = 5): Promise<TGChu
   }
 }
 
-/** Extract compact entity descriptions from chunk text (simulates pre-indexed graph data).
- *  Entity extraction runs at INGEST TIME so the cost is amortized.
- *  At query time, we only pay for the compact entity context, not full chunk text. */
+/** Extract compact entity descriptions from chunk text in "EntityName: description" format.
+ *  Wikipedia articles open with "X is/are Y" — we extract X as the entity name so the
+ *  knowledge-graph context is always structured as "ConceptName: first sentence". */
 export function chunkToEntityContext(text: string, maxChars = 220): string {
-  // Take first sentence — Wikipedia science articles open with the key entity definition
   const firstSentence = text.split(/(?<=[.!?])\s+/)[0].trim();
+  // Match "EntityName is/are/was/were ..." Wikipedia opening pattern
+  const match = firstSentence.match(/^([A-Z][^.]{2,55}?)\s+(?:is|are|was|were)\s+/);
+  if (match) {
+    // Strip parentheticals like "(DNA)" so entity name stays clean
+    const entityName = match[1].replace(/\s*\([^)]+\)/g, "").trim();
+    return `${entityName}: ${firstSentence.slice(0, maxChars)}`;
+  }
   return firstSentence.slice(0, maxChars);
 }
 

@@ -225,6 +225,19 @@ interface BenchmarkRequest {
   customBaseUrl?: string;
 }
 
+/** Run benchmark samples in small batches to avoid saturating the LLM API. */
+async function runInBatches<T, R>(
+  items: T[], batchSize: number, fn: (item: T, i: number) => Promise<R>
+): Promise<PromiseSettledResult<R>[]> {
+  const all: PromiseSettledResult<R>[] = [];
+  for (let start = 0; start < items.length; start += batchSize) {
+    const batch = items.slice(start, start + batchSize);
+    const settled = await Promise.allSettled(batch.map((item, j) => fn(item, start + j)));
+    all.push(...settled);
+  }
+  return all;
+}
+
 export async function POST(req: NextRequest) {
   const body: BenchmarkRequest = await req.json();
   const provider = body.provider || "openai";
@@ -236,8 +249,10 @@ export async function POST(req: NextRequest) {
   const hasKey = !!customApiKey || providerConfig?.isLocal || !providerConfig?.requiresApiKey || !!process.env[providerConfig?.apiKeyEnv || ""];
   const llmOverrides = { apiKeyOverride: customApiKey, baseURLOverride: customBaseUrl };
 
-  const settled = await Promise.allSettled(
-    CORPUS_SAMPLES.slice(0, numSamples).map(async (sample, i) => {
+  // Process 3 samples at a time — prevents 30+ concurrent LLM/judge calls that
+  // saturate the API and cause empty responses which score as FAIL.
+  const settled = await runInBatches(
+    CORPUS_SAMPLES.slice(0, numSamples), 3, async (sample, i) => {
       const ctx = RETRIEVAL_CONTEXTS[i];
 
       // ── Demo mode fallback ──────────────────────────────────────────────────
@@ -275,7 +290,7 @@ export async function POST(req: NextRequest) {
             { role: "system", content: "Science quiz. Reply with the concept name only — 1 to 4 words, nothing else. Use common abbreviations (DNA not deoxyribonucleic acid). Examples: 'photosynthesis' | 'electron' | 'general relativity' | 'nuclear fission'" },
             { role: "user", content: sample.question },
           ],
-          temperature: 0, maxTokens: 16,
+          temperature: 0, maxTokens: 32,
           ...llmOverrides,
         }),
         getEmbedding(sample.question).catch(() => null),
@@ -291,8 +306,13 @@ export async function POST(req: NextRequest) {
         if (questionEmbedding) {
           const chunks = await searchChunks(questionEmbedding, 5);
           if (chunks.length > 0) {
+            // Basic RAG: all 5 passages as full text
             ragContext = chunks.map((c, j) => `[Passage ${j + 1}]\n${c.text}`).join("\n\n");
-            graphContext = chunks.map((c, j) => `[${j + 1}] ${chunkToEntityContext(c.text)}`).join("\n");
+            // GraphRAG: top chunk only, in "EntityName: description" format so the
+            // prompt can reliably extract the concept name before the colon.
+            // If extraction failed (no colon), keep the pre-loaded compact context.
+            const tgGraphCtx = chunkToEntityContext(chunks[0].text);
+            if (tgGraphCtx.includes(": ")) graphContext = tgGraphCtx;
             chunksSource = "tigergraph";
           }
         }
@@ -306,16 +326,16 @@ export async function POST(req: NextRequest) {
             { role: "system", content: "Science quiz. The passages contain the answer. Reply with the concept name only — 1 to 4 words. Use common abbreviations (DNA, not deoxyribonucleic acid). No sentences, no explanations. Examples: 'photosynthesis' | 'electron' | 'general relativity'" },
             { role: "user", content: `Passages:\n${ragContext}\n\nQuestion: ${sample.question}\nConcept name:` },
           ],
-          temperature: 0, maxTokens: 16,
+          temperature: 0, maxTokens: 32,
           ...llmOverrides,
         }),
         callLLM({
           provider, model: selectedModel,
           messages: [
-            { role: "system", content: "Science quiz. Below are knowledge graph entities in 'ConceptName: description' format. Find the entity that answers the question and output ONLY the ConceptName (the text before the colon), exactly as written, nothing else." },
+            { role: "system", content: "Science quiz. The knowledge graph entry is in 'ConceptName: description' format. Output ONLY the ConceptName — the exact text before the colon. Nothing else." },
             { role: "user", content: `Knowledge graph:\n${graphContext}\n\nQuestion: ${sample.question}\nConceptName:` },
           ],
-          temperature: 0, maxTokens: 16,
+          temperature: 0, maxTokens: 32,
           ...llmOverrides,
         }),
       ]);
