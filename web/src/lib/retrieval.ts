@@ -23,11 +23,11 @@ export async function getEmbedding(text: string): Promise<number[] | null> {
   if (!token) return null;
   try {
     const res = await fetch(
-      "https://api-inference.huggingface.co/pipeline/feature-extraction/sentence-transformers/all-MiniLM-L6-v2",
+      "https://router.huggingface.co/hf-inference/models/sentence-transformers/all-MiniLM-L6-v2/pipeline/feature-extraction",
       {
         method: "POST",
         headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ inputs: text, options: { wait_for_model: true } }),
+        body: JSON.stringify({ inputs: text }),
         signal: AbortSignal.timeout(15000),
       }
     );
