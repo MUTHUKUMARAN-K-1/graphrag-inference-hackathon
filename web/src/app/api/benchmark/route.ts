@@ -102,7 +102,7 @@ const RETRIEVAL_CONTEXTS: { full: string; compact: string }[] = [
       "Spacetime is a four-dimensional manifold. Massive objects warp this manifold; smaller objects follow curved paths (geodesics) that we perceive as gravitational attraction.",
       "The first experimental confirmation of general relativity came in 1919 when Eddington observed light bending around the Sun during a solar eclipse, matching Einstein's prediction.",
     ].join("\n\n"),
-    compact: "General Relativity (THEORY, Einstein 1915): gravity = spacetime curvature from mass/energy; Einstein field equations: curvature ↔ energy-momentum; predicts black holes, gravitational waves; confirmed 1919 by Eddington",
+    compact: "General Relativity: Einstein's 1915 theory that gravity is the curvature of spacetime caused by mass and energy; predicted black holes and gravitational waves; confirmed by Eddington 1919",
   },
   {
     full: [
@@ -112,7 +112,7 @@ const RETRIEVAL_CONTEXTS: { full: string; compact: string }[] = [
       "DNA replication creates an identical copy before cell division. Helicase unwinds the double helix; DNA polymerase synthesizes new complementary strands using each original strand as a template.",
       "The central dogma of molecular biology: DNA is transcribed into RNA, which is translated into proteins. This information flow underpins all cellular function.",
     ].join("\n\n"),
-    compact: "DNA (MOLECULE): double helix polymer; stores genetic info via A-T-G-C bases; PART_OF → nucleus; Genes: DNA segments encoding proteins; DNA → TRANSCRIBED_TO → RNA → TRANSLATED_TO → Protein (central dogma)",
+    compact: "DNA: double-helix molecule that stores and transmits genetic information in all living cells; made of A-T-G-C bases; genes are DNA sequences encoding proteins; DNA is transcribed to RNA then translated to protein",
   },
   {
     full: [
@@ -122,7 +122,7 @@ const RETRIEVAL_CONTEXTS: { full: string; compact: string }[] = [
       "Chlorophyll absorbs primarily red (~680 nm) and blue (~430 nm) light while reflecting green, giving plants their color. Accessory pigments like carotenoids broaden the light-absorption spectrum.",
       "Overall photosynthesis equation: 6CO₂ + 6H₂O + light energy → C₆H₁₂O₆ + 6O₂. About 40% of solar energy absorbed is converted to chemical energy.",
     ].join("\n\n"),
-    compact: "Photosynthesis (PROCESS, plants/algae): light+CO₂+H₂O → glucose+O₂; Location: chloroplasts; Chlorophyll (PIGMENT): absorbs red/blue light; Light reactions → ATP+NADPH; Calvin cycle → glucose fixation",
+    compact: "Photosynthesis: biological process in plants and algae that converts sunlight and CO₂ into glucose and oxygen; occurs in chloroplasts; chlorophyll absorbs light; light reactions produce ATP; Calvin cycle fixes carbon",
   },
   {
     full: [
@@ -132,7 +132,7 @@ const RETRIEVAL_CONTEXTS: { full: string; compact: string }[] = [
       "In chemical bonds, electrons are shared between atoms (covalent bond) or fully transferred from one atom to another (ionic bond).",
       "Electrons carry electric current in conductors. In semiconductors like silicon, controlled electron flow via doping and junctions enables transistors and all modern electronics.",
     ].join("\n\n"),
-    compact: "Electron (PARTICLE): charge=-1, lepton; orbits nucleus in quantized orbitals; DISCOVERED_BY → J.J. Thomson (1897); enables: covalent bonds, ionic bonds, electric current; PART_OF → atoms",
+    compact: "Electron: subatomic particle with negative electric charge; orbits the atomic nucleus in quantized energy levels; discovered by J.J. Thomson 1897; enables chemical bonds and electric current",
   },
   {
     full: [
@@ -142,7 +142,7 @@ const RETRIEVAL_CONTEXTS: { full: string; compact: string }[] = [
       "Darwin developed his theory after observing variation among Galápagos finches and tortoises. The finches' beak shapes varied by island, each adapted to local food sources.",
       "Natural selection was independently proposed by Alfred Russel Wallace at the same time. Combined with Mendelian genetics, it forms the Modern Synthesis of evolutionary biology.",
     ].join("\n\n"),
-    compact: "Natural Selection (MECHANISM, Darwin 1859): survival/reproduction of fittest; PROPOSED_BY → Charles Darwin; also → Alfred Russel Wallace; leads to: adaptation, speciation; requires: variation + heredity + selection pressure",
+    compact: "Natural Selection: Darwin's 1859 mechanism of evolution where organisms with beneficial heritable traits survive and reproduce more successfully; leads to adaptation and speciation over generations",
   },
   {
     full: [
@@ -152,7 +152,7 @@ const RETRIEVAL_CONTEXTS: { full: string; compact: string }[] = [
       "Double bonds (2 shared pairs) and triple bonds (3 shared pairs) are stronger and shorter than single bonds. Carbon–carbon triple bonds are among the strongest covalent bonds.",
       "Lewis structures represent covalent bonds as lines between atoms. VSEPR theory predicts molecular geometry from the arrangement of bonding and lone-pair electrons.",
     ].join("\n\n"),
-    compact: "Covalent Bond (CHEMICAL_BOND): shared electron pairs between atoms; Polar: unequal sharing → partial charges (H₂O); Nonpolar: equal sharing (H₂, O₂); Double/triple bonds: stronger than single; formed between similar-electronegativity atoms",
+    compact: "Covalent Bond: chemical bond formed when two atoms share one or more electron pairs; forms between atoms with similar electronegativities; can be polar (unequal sharing) or nonpolar (equal sharing)",
   },
   {
     full: [
@@ -162,7 +162,7 @@ const RETRIEVAL_CONTEXTS: { full: string; compact: string }[] = [
       "Otto Hahn, Fritz Strassmann, Lise Meitner, and Otto Frisch identified nuclear fission in 1938. The Manhattan Project (1942–1945) weaponized fission, producing the first atomic bombs.",
       "Modern nuclear power plants use fission of uranium-235 to generate heat, which drives steam turbines. Nuclear power provides about 10% of the world's electricity.",
     ].join("\n\n"),
-    compact: "Nuclear Fission (PROCESS): heavy nucleus + neutron → smaller nuclei + energy + neutrons; Fuel: U-235, Pu-239; Chain reaction: neutrons trigger more fission; energy from: mass defect (E=mc²); DISCOVERED_BY → Hahn, Meitner (1938)",
+    compact: "Nuclear Fission: process where a heavy atomic nucleus absorbs a neutron and splits into smaller nuclei releasing tremendous energy; released neutrons trigger a chain reaction; powers nuclear reactors and atomic bombs",
   },
   {
     full: [
@@ -172,7 +172,7 @@ const RETRIEVAL_CONTEXTS: { full: string; compact: string }[] = [
       "Light from the Sun takes approximately 8 minutes 20 seconds to reach Earth. A light-year (9.461×10¹⁵ m) is the distance light travels in one year.",
       "The speed of light defines the meter: 1 m = distance light travels in 1/299,792,458 s. It also appears in mass-energy equivalence: E = mc².",
     ].join("\n\n"),
-    compact: "Speed of Light (CONSTANT, c=299,792,458 m/s): max speed in universe; same for all observers (special relativity, Einstein 1905); confirmed by Michelson-Morley (1887); 1 light-year = 9.461×10¹⁵ m; appears in E=mc²",
+    compact: "Speed of Light: universal constant (c = 299,792,458 m/s) that is the maximum speed at which matter, energy, or information can travel; the same for all observers; fundamental to Einstein's special relativity and E=mc²",
   },
   {
     full: [
@@ -182,7 +182,7 @@ const RETRIEVAL_CONTEXTS: { full: string; compact: string }[] = [
       "The Schrödinger equation describes the time evolution of a quantum system's wave function. The squared magnitude of the wave function gives the probability density of finding a particle at a location.",
       "Quantum mechanics underpins chemistry (electron orbitals), materials science (semiconductors), and technologies like lasers, MRI scanners, and quantum computers.",
     ].join("\n\n"),
-    compact: "Quantum Mechanics (PHYSICS_FIELD): matter/energy at atomic/subatomic scales; Uncertainty principle (Heisenberg): ΔxΔp ≥ ℏ/2; Wave-particle duality; Schrödinger equation: wave function evolution; KEY_FIGURES → Bohr, Heisenberg, Schrödinger, Planck",
+    compact: "Quantum Mechanics: field of physics describing matter and energy behavior at atomic and subatomic scales using wave functions; includes Heisenberg's uncertainty principle and wave-particle duality; developed by Bohr, Heisenberg, Schrödinger",
   },
   {
     full: [
@@ -192,7 +192,7 @@ const RETRIEVAL_CONTEXTS: { full: string; compact: string }[] = [
       "The carbon cycle describes how carbon moves through the atmosphere (CO₂), biosphere (photosynthesis/respiration), oceans (dissolved CO₂), and lithosphere (fossil fuels, limestone).",
       "Carbon-14 (¹⁴C) is a radioactive isotope formed in the atmosphere. It decays with a half-life of 5,730 years and is used in radiocarbon dating of organic materials up to ~50,000 years old.",
     ].join("\n\n"),
-    compact: "Carbon (ELEMENT, C, #6, group 14): 4 valence electrons; backbone of organic chemistry; allotropes: diamond, graphite, graphene, fullerenes; carbon cycle: CO₂↔photosynthesis↔respiration; ¹⁴C: radiocarbon dating (t½=5,730yr)",
+    compact: "Carbon: chemical element (symbol C, atomic number 6) with four valence electrons; forms the backbone of all organic molecules and all known life; allotropes include diamond, graphite, and graphene",
   },
 ];
 
@@ -251,10 +251,10 @@ export async function POST(req: NextRequest) {
         callLLM({
           provider, model: selectedModel,
           messages: [
-            { role: "system", content: "Answer with the exact scientific term or name only. 1–3 words maximum. No explanation, no punctuation, no sentence — just the term." },
+            { role: "system", content: "Answer with the scientific name or term only. Keep it to 1-4 words. No explanation." },
             { role: "user", content: sample.question },
           ],
-          temperature: 0, maxTokens: 32,
+          temperature: 0, maxTokens: 64,
           ...llmOverrides,
         }),
         getEmbedding(sample.question).catch(() => null),
@@ -282,19 +282,19 @@ export async function POST(req: NextRequest) {
         callLLM({
           provider, model: selectedModel,
           messages: [
-            { role: "system", content: "Using the provided passages, identify and output the exact answer term or name only. 1–3 words maximum. No explanation, no sentence — just the term." },
-            { role: "user", content: `Context:\n${ragContext}\n\nQuestion: ${sample.question}\n\nAnswer (term only):` },
+            { role: "system", content: "Using the provided passages, identify and state the answer as the scientific name or term. 1-4 words, no explanation." },
+            { role: "user", content: `Context:\n${ragContext}\n\nQuestion: ${sample.question}\n\nAnswer:` },
           ],
-          temperature: 0, maxTokens: 32,
+          temperature: 0, maxTokens: 64,
           ...llmOverrides,
         }),
         callLLM({
           provider, model: selectedModel,
           messages: [
-            { role: "system", content: "Using the knowledge graph entity descriptions, identify and output the exact answer term or name only. 1–3 words maximum. No explanation, no sentence — just the term." },
-            { role: "user", content: `Graph Entities:\n${graphContext}\n\nQuestion: ${sample.question}\n\nAnswer (term only):` },
+            { role: "system", content: "Each knowledge graph entry starts with the entity name followed by a colon and its description. Find which entity answers the question and output only that entity name. 1-4 words, no explanation." },
+            { role: "user", content: `Graph Entities:\n${graphContext}\n\nQuestion: ${sample.question}\n\nAnswer (entity name only):` },
           ],
-          temperature: 0, maxTokens: 32,
+          temperature: 0, maxTokens: 64,
           ...llmOverrides,
         }),
       ]);
