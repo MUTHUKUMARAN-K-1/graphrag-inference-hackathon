@@ -61,15 +61,40 @@ export function PlaygroundContent() {
   const [queryType, setQueryType] = useState("");
   const [recommended, setRecommended] = useState("");
   const [demoMode, setDemoMode] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+  const [customApiKey, setCustomApiKey] = useState("");
+  const [customBaseUrl, setCustomBaseUrl] = useState("");
 
   useEffect(() => {
     fetch("/api/providers").then(r => r.json()).then(d => {
       if (d.providers) setProviders(d.providers);
     }).catch(() => {});
+    // Restore saved settings from localStorage
+    try {
+      const saved = localStorage.getItem("graphrag_api_settings");
+      if (saved) {
+        const s = JSON.parse(saved);
+        if (s.apiKey) setCustomApiKey(s.apiKey);
+        if (s.baseUrl) setCustomBaseUrl(s.baseUrl);
+      }
+    } catch { /* ignore */ }
   }, []);
+
+  const saveSettings = (apiKey: string, baseUrl: string) => {
+    setCustomApiKey(apiKey);
+    setCustomBaseUrl(baseUrl);
+    try { localStorage.setItem("graphrag_api_settings", JSON.stringify({ apiKey, baseUrl })); } catch { /* ignore */ }
+  };
+
+  const clearSettings = () => {
+    setCustomApiKey("");
+    setCustomBaseUrl("");
+    try { localStorage.removeItem("graphrag_api_settings"); } catch { /* ignore */ }
+  };
 
   const selectedProvider = providers.find(p => p.id === provider) || providers[0];
   const selectedModel = model || selectedProvider?.defaultModel || "";
+  const usingCustomKey = !!customApiKey;
 
   const runComparison = async () => {
     if (!query.trim()) return;
@@ -78,7 +103,11 @@ export function PlaygroundContent() {
       const res = await fetch("/api/compare", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query, adaptiveRouting, provider, model: selectedModel }),
+        body: JSON.stringify({
+          query, adaptiveRouting, provider, model: selectedModel,
+          ...(customApiKey && { customApiKey }),
+          ...(customBaseUrl && { customBaseUrl }),
+        }),
       });
       const data = await res.json();
       setLlmOnly(data.llmOnly ?? null);
@@ -143,12 +172,68 @@ export function PlaygroundContent() {
                 className="w-4 h-4 accent-[#FF6B00] rounded" />
               🧠 Adaptive Routing
             </label>
-            {!selectedProvider?.hasApiKey && !selectedProvider?.isLocal && (
+            {usingCustomKey ? (
+              <span className="badge" style={{ fontSize: "0.6875rem", alignSelf: "flex-start", background: "rgba(93,184,114,0.12)", color: "#3a8a52" }}>
+                ✓ Using your API key
+              </span>
+            ) : !selectedProvider?.hasApiKey && !selectedProvider?.isLocal ? (
               <span className="badge-outline" style={{ fontSize: "0.6875rem", alignSelf: "flex-start" }}>
                 Demo Mode — No API Key
               </span>
-            )}
+            ) : null}
           </div>
+        </div>
+
+        {/* API Settings toggle */}
+        <div className="mt-4 pt-4" style={{ borderTop: "1px solid var(--color-hairline-soft)" }}>
+          <button
+            onClick={() => setShowSettings(s => !s)}
+            className="flex items-center gap-2 caption"
+            style={{ color: "var(--color-muted)", cursor: "pointer", background: "none", border: "none", padding: 0 }}
+          >
+            <span style={{ fontSize: "0.75rem" }}>⚙</span>
+            {showSettings ? "▲" : "▼"} API Settings
+            <span style={{ color: "var(--color-tiger-orange)", fontSize: "0.6875rem", marginLeft: "4px" }}>
+              {usingCustomKey ? "(your key active)" : "(optional — uses env defaults)"}
+            </span>
+          </button>
+
+          {showSettings && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+              <div>
+                <label className="caption mb-1 block">API Key</label>
+                <input
+                  type="password"
+                  className="input"
+                  placeholder="sk-… or leave blank to use server env"
+                  value={customApiKey}
+                  onChange={e => saveSettings(e.target.value, customBaseUrl)}
+                  autoComplete="off"
+                />
+              </div>
+              <div>
+                <label className="caption mb-1 block">Base URL <span style={{ color: "var(--color-muted)", fontWeight: 400 }}>(optional)</span></label>
+                <input
+                  type="text"
+                  className="input"
+                  placeholder={`e.g. https://models.botlearn.ai/v1`}
+                  value={customBaseUrl}
+                  onChange={e => saveSettings(customApiKey, e.target.value)}
+                />
+              </div>
+              {(customApiKey || customBaseUrl) && (
+                <div className="md:col-span-2 flex justify-end">
+                  <button
+                    onClick={clearSettings}
+                    className="caption"
+                    style={{ color: "var(--color-muted)", cursor: "pointer", background: "none", border: "none", padding: 0, textDecoration: "underline" }}
+                  >
+                    Clear — revert to server defaults
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
 

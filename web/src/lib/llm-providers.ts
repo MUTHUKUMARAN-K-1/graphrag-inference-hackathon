@@ -58,6 +58,8 @@ export interface LLMRequest {
   maxTokens?: number;
   jsonMode?: boolean;
   stream?: boolean;
+  apiKeyOverride?: string;
+  baseURLOverride?: string;
 }
 
 export interface LLMResponse {
@@ -343,15 +345,16 @@ export async function callLLM(request: LLMRequest): Promise<LLMResponse> {
   }
 
   // ── All other providers use OpenAI SDK ───────────────
-  const apiKey = provider.isLocal
+  const apiKey = request.apiKeyOverride || (provider.isLocal
     ? "ollama"
-    : process.env[provider.apiKeyEnv] || "";
+    : process.env[provider.apiKeyEnv] || "");
 
   if (!apiKey && provider.requiresApiKey) {
     throw new Error(`Missing API key: set ${provider.apiKeyEnv} environment variable`);
   }
 
-  const client = await getOpenAIClient(provider.baseURL, apiKey);
+  const baseURL = request.baseURLOverride || provider.baseURL;
+  const client = await getOpenAIClient(baseURL, apiKey);
 
   const params: Record<string, unknown> = {
     model,

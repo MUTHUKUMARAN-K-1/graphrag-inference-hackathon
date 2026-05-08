@@ -11,12 +11,14 @@ interface CompareRequest {
   model?: string;
   adaptiveRouting?: boolean;
   topK?: number;
+  customApiKey?: string;
+  customBaseUrl?: string;
 }
 
 export async function POST(req: NextRequest) {
   try {
     const body: CompareRequest = await req.json();
-    const { query, provider = "openai", model, adaptiveRouting = true, topK = 5 } = body;
+    const { query, provider = "openai", model, adaptiveRouting = true, topK = 5, customApiKey, customBaseUrl } = body;
 
     if (!query?.trim()) {
       return NextResponse.json({ error: "Query required" }, { status: 400 });
@@ -27,12 +29,13 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: `Unknown provider: ${provider}` }, { status: 400 });
     }
 
-    const hasKey = providerConfig.isLocal || !providerConfig.requiresApiKey || !!process.env[providerConfig.apiKeyEnv];
+    const hasKey = !!customApiKey || providerConfig.isLocal || !providerConfig.requiresApiKey || !!process.env[providerConfig.apiKeyEnv];
     if (!hasKey) {
       return NextResponse.json(getDemoResponse(query, provider));
     }
 
     const selectedModel = model || providerConfig.defaultModel;
+    const llmOverrides = { apiKeyOverride: customApiKey, baseURLOverride: customBaseUrl };
     const startTime = Date.now();
 
     // ── Parallel phase 1: LLM-Only + embedding fetch run simultaneously ──
@@ -46,6 +49,7 @@ export async function POST(req: NextRequest) {
           { role: "user", content: query },
         ],
         temperature: 0, maxTokens: 512,
+        ...llmOverrides,
       }),
       getEmbedding(query),
     ]);
@@ -75,6 +79,7 @@ export async function POST(req: NextRequest) {
           { role: "user", content: `Context:\n${ragContext}\n\nQuestion: ${query}\n\nAnswer:` },
         ],
         temperature: 0, maxTokens: 512,
+        ...llmOverrides,
       }),
       callLLM({
         provider, model: selectedModel,
@@ -83,6 +88,7 @@ export async function POST(req: NextRequest) {
           { role: "user", content: `Knowledge Graph Entities:\n${graphContext}\n\nQuestion: ${query}\n\nAnswer:` },
         ],
         temperature: 0, maxTokens: 512,
+        ...llmOverrides,
       }),
     ]);
     // Both share the same wall-clock window; report individual latencies from their response objects.

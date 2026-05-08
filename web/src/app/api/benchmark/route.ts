@@ -43,7 +43,8 @@ function rescaleBertscore(raw: number): number {
 // ── LLM-as-a-Judge ───────────────────────────────────────────────────────────
 async function judgeAnswer(
   question: string, gold: string, answer: string,
-  provider: ProviderId, model: string
+  provider: ProviderId, model: string,
+  apiKeyOverride?: string, baseURLOverride?: string,
 ): Promise<boolean> {
   try {
     const resp = await callLLM({
@@ -67,6 +68,8 @@ async function judgeAnswer(
       ],
       temperature: 0,
       maxTokens: 8,
+      apiKeyOverride,
+      baseURLOverride,
     });
     return resp.content.toUpperCase().includes("PASS");
   } catch {
@@ -195,6 +198,8 @@ interface BenchmarkRequest {
   numSamples?: number;
   provider?: ProviderId;
   model?: string;
+  customApiKey?: string;
+  customBaseUrl?: string;
 }
 
 export async function POST(req: NextRequest) {
@@ -202,9 +207,11 @@ export async function POST(req: NextRequest) {
   const provider = body.provider || "openai";
   const model = body.model;
   const numSamples = Math.min(body.numSamples || 10, CORPUS_SAMPLES.length);
+  const { customApiKey, customBaseUrl } = body;
 
   const providerConfig = PROVIDERS[provider];
-  const hasKey = providerConfig?.isLocal || !providerConfig?.requiresApiKey || !!process.env[providerConfig?.apiKeyEnv || ""];
+  const hasKey = !!customApiKey || providerConfig?.isLocal || !providerConfig?.requiresApiKey || !!process.env[providerConfig?.apiKeyEnv || ""];
+  const llmOverrides = { apiKeyOverride: customApiKey, baseURLOverride: customBaseUrl };
 
   const settled = await Promise.allSettled(
     CORPUS_SAMPLES.slice(0, numSamples).map(async (sample, i) => {
@@ -246,6 +253,7 @@ export async function POST(req: NextRequest) {
             { role: "user", content: sample.question },
           ],
           temperature: 0, maxTokens: 64,
+          ...llmOverrides,
         }),
         getEmbedding(sample.question).catch(() => null),
         getEmbedding(sample.answer).catch(() => null),
@@ -276,6 +284,7 @@ export async function POST(req: NextRequest) {
             { role: "user", content: `Context:\n${ragContext}\n\nQuestion: ${sample.question}\n\nAnswer:` },
           ],
           temperature: 0, maxTokens: 64,
+          ...llmOverrides,
         }),
         callLLM({
           provider, model: selectedModel,
@@ -284,13 +293,14 @@ export async function POST(req: NextRequest) {
             { role: "user", content: `Graph Entities:\n${graphContext}\n\nQuestion: ${sample.question}\n\nAnswer:` },
           ],
           temperature: 0, maxTokens: 64,
+          ...llmOverrides,
         }),
       ]);
 
       // ── Phase 3: LLM-as-a-Judge + embed(graphrag_answer) in parallel ─────────
       const [graphragJudgePass, baselineJudgePass, graphragEmbedding] = await Promise.all([
-        judgeAnswer(sample.question, sample.answer, graphResp.content, provider, selectedModel),
-        judgeAnswer(sample.question, sample.answer, ragResp.content, provider, selectedModel),
+        judgeAnswer(sample.question, sample.answer, graphResp.content, provider, selectedModel, customApiKey, customBaseUrl),
+        judgeAnswer(sample.question, sample.answer, ragResp.content, provider, selectedModel, customApiKey, customBaseUrl),
         getEmbedding(graphResp.content).catch(() => null),
       ]);
 

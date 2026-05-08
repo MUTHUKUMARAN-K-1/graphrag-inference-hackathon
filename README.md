@@ -15,10 +15,12 @@ Proving that graphs make LLM inference faster, cheaper, and smarter — backed b
 
 [Results](#-benchmark-results) · [Architecture](#-3-pipeline-architecture) · [Ablation](#-ablation-study) · [Dataset](#-dataset) · [Quick Start](#-quick-start)
 
-> **🚀 Live Dashboard:** Run `cd web && npm install && npm run dev` → open **http://localhost:3000**
-> - [`/playground`](http://localhost:3000/playground) — 3-pipeline side-by-side with 12 LLM providers
-> - [`/benchmarks`](http://localhost:3000/benchmarks) — batch eval: F1, LLM-Judge, BERTScore, radar charts
-> - [`/explorer`](http://localhost:3000/explorer) — interactive knowledge graph visualization
+> **🚀 Live Dashboard → [tigergraph-dashboard.vercel.app](https://tigergraph-dashboard.vercel.app)**
+> - [/playground](https://tigergraph-dashboard.vercel.app/playground) — 3-pipeline side-by-side with 12 LLM providers
+> - [/benchmarks](https://tigergraph-dashboard.vercel.app/benchmarks) — batch eval: F1, LLM-Judge, BERTScore, radar charts
+> - [/explorer](https://tigergraph-dashboard.vercel.app/explorer) — interactive knowledge graph visualization
+>
+> **Bring your own API key** — enter it directly in the dashboard UI (stored locally, never sent to our servers except your chosen LLM endpoint).
 
 </div>
 
@@ -350,6 +352,9 @@ cd web && npm install && npm run dev
 # → http://localhost:3000/playground   (3-pipeline side-by-side comparison)
 # → http://localhost:3000/benchmarks   (batch eval: 10 questions, F1 + token metrics)
 # → http://localhost:3000/explorer     (graph entity explorer)
+#
+# Or use the live deployment: https://tigergraph-dashboard.vercel.app
+# Enter your own API key directly in the dashboard UI — no .env required.
 
 # 3. (Optional) Ingest your own corpus into TigerGraph
 cd .. && pip install -r requirements.txt
