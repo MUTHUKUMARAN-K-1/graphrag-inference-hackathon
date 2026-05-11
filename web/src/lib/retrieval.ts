@@ -51,13 +51,16 @@ export async function getEmbedding(text: string): Promise<number[] | null> {
 /** Call TigerGraph vectorSearchChunks installed query */
 export async function searchChunks(embedding: number[], topK = 5): Promise<TGChunk[]> {
   const host = (process.env.TG_HOST || "").replace(/\/$/, "");
+  const secret = process.env.TG_SECRET;
   const token = process.env.TG_TOKEN;
   const graph = process.env.TG_GRAPH || "GraphRAG";
-  if (!host || !token || !embedding.length) return [];
+  // Prefer GSQL-Secret (doesn't expire) over Bearer token
+  const authHeader = secret ? `GSQL-Secret ${secret}` : token ? `Bearer ${token}` : null;
+  if (!host || !authHeader || !embedding.length) return [];
   try {
     const res = await fetch(`${host}/restpp/query/${graph}/vectorSearchChunks`, {
       method: "POST",
-      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      headers: { Authorization: authHeader, "Content-Type": "application/json" },
       body: JSON.stringify({ queryVec: embedding, topK }),
       signal: AbortSignal.timeout(20000),
     });
