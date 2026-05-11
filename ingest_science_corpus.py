@@ -206,8 +206,8 @@ def upsert_batch(vertices: dict, edges: dict = None) -> None:
     if edges:
         body["edges"] = edges
     result = tg_post(f"/graph/{TG_GRAPH}", body)
-    if not result.get("error", False) and result.get("code") not in ("REST-0000",):
-        pass  # success; TG returns {"results":[{"accepted_vertices":n}],...}
+    if result.get("error"):
+        print(f"  WARNING: upsert error: {result.get('message','')[:120]}")
 
 # ── Main ingestion ─────────────────────────────────────────────────────────────
 def check_graph():
@@ -253,9 +253,9 @@ def ingest():
         # Upsert Document vertex
         upsert_batch({"Document": {
             doc_id: {
-                "title":   {"value": title,     "op": "ignore_if_exists"},
-                "content": {"value": " ".join(doc["chunks"]), "op": "ignore_if_exists"},
-                "source":  {"value": "wikipedia", "op": "ignore_if_exists"},
+                "title":   {"value": title,     "op": "overwrite"},
+                "content": {"value": " ".join(doc["chunks"]), "op": "overwrite"},
+                "source":  {"value": "wikipedia", "op": "overwrite"},
             }
         }})
 
@@ -271,14 +271,14 @@ def ingest():
             upsert_batch(
                 vertices={"Chunk": {
                     chunk_id: {
-                        "text":        {"value": text,          "op": "ignore_if_exists"},
-                        "embedding":   {"value": emb,           "op": "ignore_if_exists"},
-                        "chunk_index": {"value": i,             "op": "ignore_if_exists"},
-                        "token_count": {"value": len(text.split()), "op": "ignore_if_exists"},
-                        "doc_id":      {"value": doc_id,        "op": "ignore_if_exists"},
+                        "text":        {"value": text,          "op": "overwrite"},
+                        "embedding":   {"value": emb,           "op": "overwrite"},
+                        "chunk_index": {"value": i,             "op": "overwrite"},
+                        "token_count": {"value": len(text.split()), "op": "overwrite"},
+                        "doc_id":      {"value": doc_id,        "op": "overwrite"},
                     }
                 }},
-                edges={"PART_OF": {"Chunk": {chunk_id: {"Document": {doc_id: {"position": {"value": i, "op": "ignore_if_exists"}}}}}}},
+                edges={"Chunk": {chunk_id: {"PART_OF": {"Document": {doc_id: {"position": {"value": i, "op": "overwrite"}}}}}}},
             )
             done += 1
             print(f"done ({done}/{total_chunks})")
