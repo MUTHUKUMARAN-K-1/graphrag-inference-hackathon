@@ -62,14 +62,18 @@ function rescaleBertscore(raw: number): number {
 }
 
 // ── LLM-as-a-Judge ───────────────────────────────────────────────────────────
+// Always uses Mistral-7B via HuggingFace regardless of the generation model,
+// to avoid self-grading bias when judge and generator are the same model.
 async function judgeAnswer(
   question: string, gold: string, answer: string,
-  provider: ProviderId, model: string,
-  apiKeyOverride?: string, baseURLOverride?: string,
+  _provider: ProviderId, _model: string,
+  _apiKeyOverride?: string, _baseURLOverride?: string,
 ): Promise<boolean> {
+  const judgeKey = process.env.HUGGING_FACE_HUB_TOKEN || process.env.HF_TOKEN;
   try {
     const resp = await callLLM({
-      provider, model,
+      provider: "huggingface",
+      model: "mistralai/Mistral-7B-Instruct-v0.3",
       messages: [
         {
           role: "system",
@@ -88,9 +92,8 @@ async function judgeAnswer(
         },
       ],
       temperature: 0,
-      maxTokens: 128,
-      apiKeyOverride,
-      baseURLOverride,
+      maxTokens: 32,
+      apiKeyOverride: judgeKey,
     });
     const upper = resp.content.toUpperCase().replace(/[^A-Z]/g, " ").trim();
     if (/\bFAIL\b|\bNO\b|\bWRONG\b|\bINCORRECT\b|\bFALSE\b/.test(upper)) return false;
