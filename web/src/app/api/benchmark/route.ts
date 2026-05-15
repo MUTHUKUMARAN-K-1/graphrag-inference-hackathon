@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { callLLM, PROVIDERS, type ProviderId } from "@/lib/llm-providers";
-import { getEmbedding, searchChunks, chunkToEntityContext, getDocumentChunks, extractEntityNames, type TGDocChunk } from "@/lib/retrieval";
+import { getEmbedding, searchChunks, chunkToEntityContext, getDocumentChunks, getEntityHopChunks, extractEntityNames, type TGDocChunk } from "@/lib/retrieval";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -315,18 +315,24 @@ export async function POST(req: NextRequest) {
             chunksSource = "tigergraph";
 
             // ── Pain-point fixes ───────────────────────────────────────────
-            // 1. Relationship awareness: extract entity names → secondary search
-            const entityNames = extractEntityNames(chunks[0].text);
-            const entityQuery = entityNames.join(" ");
-
-            // 2. Multi-hop: sibling chunks from same doc + entity-linked chunks (parallel)
-            const [siblings, entityEmbed] = await Promise.all([
+            // 1+2. Multi-hop sibling chunks + real entity-hop traversal (parallel)
+            // Entity-hop: Chunk→MENTIONS→Entity→RELATED_TO→Entity→MENTIONS→Chunks
+            const [siblings, entityHopRaw] = await Promise.all([
               getDocumentChunks(chunks[0].chunk_id, 4).catch(() => [] as TGDocChunk[]),
-              entityQuery ? getEmbedding(entityQuery).catch(() => null) : Promise.resolve(null),
+              getEntityHopChunks(chunks[0].chunk_id, 4).catch(() => []),
             ]);
-            const entityChunks = entityEmbed
-              ? await searchChunks(entityEmbed, 3).catch(() => [])
-              : [];
+
+            // Fallback: if no entity graph data, embed extracted names for secondary search
+            let entityChunks: Array<{ chunk_id: string; text: string; score?: number }> = entityHopRaw;
+            if (entityChunks.length === 0) {
+              const entityNames = extractEntityNames(chunks[0].text);
+              const entityEmbed = entityNames.length > 0
+                ? await getEmbedding(entityNames.join(" ")).catch(() => null)
+                : null;
+              entityChunks = entityEmbed
+                ? await searchChunks(entityEmbed, 3).catch(() => [])
+                : [];
+            }
 
             // 3. Chunk loss fix: merge primary + siblings + entity-linked, deduplicate
             const seen = new Set<string>();

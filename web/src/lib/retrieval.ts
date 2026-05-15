@@ -93,13 +93,13 @@ export function estimateTokens(text: string): number {
 }
 
 export interface TGDocChunk {
-  pos: number;
+  idx: number;
   chunk_id: string;
   text: string;
 }
 
 /** Multi-hop: fetch sibling chunks from the same document as seedChunkId.
- *  Calls the getDocumentChunks GSQL query which walks Chunk→PART_OF→Document→Chunks. */
+ *  Walks Chunk→PART_OF→Document→Chunks via the getDocumentChunks GSQL query. */
 export async function getDocumentChunks(chunkId: string, topK = 6): Promise<TGDocChunk[]> {
   const tgHost = (process.env.TG_HOST || "").replace(/\/$/, "");
   const secret = process.env.TG_SECRET;
@@ -117,15 +117,43 @@ export async function getDocumentChunks(chunkId: string, topK = 6): Promise<TGDo
     if (!res.ok) return [];
     const data = await res.json();
     const rows = (data.results?.[0]?.["@@rows"] as TGDocChunk[]) || [];
-    // Sort by position and cap at topK
-    return rows.sort((a, b) => a.pos - b.pos).slice(0, topK);
+    return rows.sort((a, b) => a.idx - b.idx).slice(0, topK);
   } catch {
     return [];
   }
 }
 
-/** Relationship awareness: extract capitalized entity/concept names from chunk text.
- *  Used to seed a secondary vector search for entity-linked context. */
+export interface TGEntityChunk {
+  chunk_id: string;
+  text: string;
+}
+
+/** Relationship awareness: real entity-hop traversal via MENTIONS and RELATED_TO edges.
+ *  Chunk→MENTIONS→Entity→RELATED_TO→Entity→MENTIONS(reverse)→Chunks */
+export async function getEntityHopChunks(chunkId: string, topK = 4): Promise<TGEntityChunk[]> {
+  const tgHost = (process.env.TG_HOST || "").replace(/\/$/, "");
+  const secret = process.env.TG_SECRET;
+  const token = process.env.TG_TOKEN;
+  const graph = process.env.TG_GRAPH || "GraphRAG";
+  const authHeader = secret ? `GSQL-Secret ${secret}` : token ? `Bearer ${token}` : null;
+  if (!tgHost || !authHeader) return [];
+  try {
+    const res = await fetch(`${tgHost}/restpp/query/${graph}/entityHopChunks`, {
+      method: "POST",
+      headers: { Authorization: authHeader, "Content-Type": "application/json" },
+      body: JSON.stringify({ seedChunkId: chunkId, topK }),
+      signal: AbortSignal.timeout(20000),
+    });
+    if (!res.ok) return [];
+    const data = await res.json();
+    return (data.results?.[0]?.["@@results"] as TGEntityChunk[]) || [];
+  } catch {
+    return [];
+  }
+}
+
+/** Fallback entity extraction for when entity graph has no data for a chunk.
+ *  Extracts capitalized concept names to seed a secondary vector search. */
 export function extractEntityNames(text: string, max = 3): string[] {
   const matches = text.match(/\b[A-Z][a-z]{2,}(?:\s+[A-Z][a-z]{2,})*\b/g) || [];
   return [...new Set(matches)].slice(0, max);
