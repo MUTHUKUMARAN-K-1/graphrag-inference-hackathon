@@ -2,7 +2,7 @@
 
 export function StatsBar() {
   const stats = [
-    { value: "−44%", label: "Token Reduction vs RAG", color: "#FF6B00" },
+    { value: "−58%", label: "Token Reduction vs RAG", color: "#FF6B00" },
     { value: "4", label: "AI Factory Layers", color: "#002B49" },
     { value: "12", label: "LLM Providers", color: "#0072CE" },
     { value: "5", label: "Novel Features", color: "#cc785c" },

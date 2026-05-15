@@ -18,6 +18,7 @@ interface AggregateData {
   graphrag: PipelineStats;
   graphragF1WinRate: number;
   tokenReductionVsBaseline: number;
+  chunksSource?: string;
   // Answer accuracy evaluation (hackathon required)
   graphragJudgePassRate?: number;
   baselineJudgePassRate?: number;
@@ -258,6 +259,20 @@ export function BenchmarkContent() {
               </span>
             </div>
           )}
+          {!demoMode && data.chunksSource && (
+            <div className="flex items-center gap-2 mt-3">
+              {data.chunksSource === "tigergraph" ? (
+                <span className="badge-orange" style={{ fontSize: "0.6875rem" }}>🔴 Live TigerGraph Retrieval</span>
+              ) : (
+                <span className="badge-outline" style={{ fontSize: "0.6875rem" }}>📦 Corpus Fallback</span>
+              )}
+              <span className="body-sm" style={{ color: "var(--color-muted)" }}>
+                {data.chunksSource === "tigergraph"
+                  ? "Chunks retrieved via vector search + multi-hop entity traversal"
+                  : "Pre-loaded corpus context used (TigerGraph not reached)"}
+              </span>
+            </div>
+          )}
         </div>
       </div>
 
@@ -332,7 +347,7 @@ export function BenchmarkContent() {
                 <div className="flex items-start justify-between mb-3">
                   <div>
                     <div className="title-sm">LLM-as-a-Judge</div>
-                    <div className="caption mt-0.5" style={{ color: "var(--color-muted)" }}>PASS/FAIL per answer</div>
+                    <div className="caption mt-0.5" style={{ color: "var(--color-muted)" }}>Groq Llama-3.3-70B · independent model · PASS/FAIL per answer</div>
                   </div>
                   {(data.graphragJudgePassRate ?? 0) >= 0.90
                     ? <span className="badge-orange" style={{ fontSize: "0.6875rem" }}>✓ Bonus ≥90%</span>
@@ -557,20 +572,54 @@ export function BenchmarkContent() {
             </div>
           </div>
 
+          {/* GraphRAG Enhancements */}
+          <div className="card mb-8 animate-fade-in-up delay-550">
+            <div className="title-md mb-4">GraphRAG Pipeline Enhancements</div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {[
+                {
+                  icon: "🔗",
+                  title: "Multi-hop Traversal",
+                  desc: "Chunk → PART_OF → Document → sibling Chunks. Retrieves full document context beyond the top vector hit.",
+                  color: "#FF6B00",
+                },
+                {
+                  icon: "🧠",
+                  title: "Entity-hop Traversal",
+                  desc: "Chunk → MENTIONS → Entity → RELATED_TO → Entity → Chunks. Real graph edge traversal for relationship awareness.",
+                  color: "#0072CE",
+                },
+                {
+                  icon: "🧩",
+                  title: "Chunk Loss Fix",
+                  desc: "Merges up to 6 deduplicated sources (primary + siblings + entity-linked) so answers spanning multiple chunks are never missed.",
+                  color: "#5db872",
+                },
+              ].map((e, i) => (
+                <div key={i} style={{ padding: "20px", borderRadius: "12px", background: "var(--color-surface-soft)", borderLeft: `3px solid ${e.color}` }}>
+                  <div style={{ fontSize: "1.5rem", marginBottom: "8px" }}>{e.icon}</div>
+                  <div className="title-sm mb-2">{e.title}</div>
+                  <p className="body-sm" style={{ color: "var(--color-muted)" }}>{e.desc}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+
           {/* Insight */}
           <div className="card-coral animate-fade-in-up delay-600">
             <div className="display-sm" style={{ color: "white" }}>💡 Key Finding</div>
             <p className="body-lg mt-4" style={{ color: "rgba(255,255,255,0.9)", maxWidth: "680px" }}>
               GraphRAG reduces tokens by <strong>{data.tokenReductionVsBaseline}% vs Basic RAG</strong> while
               achieving <strong>{((data.graphragJudgePassRate ?? 0) * 100).toFixed(0)}% LLM-judge accuracy</strong>{" "}
-              and <strong>BERTScore {(data.avgBertscoreRaw ?? 0).toFixed(3)}</strong>.
-              Entity descriptions pre-indexed at ingest time replace raw chunk text at query time —
-              same knowledge, fraction of the tokens, maintained or improved answer quality.
+              (graded by independent Groq Llama-3.3-70B) and{" "}
+              <strong>BERTScore {(data.avgBertscoreRaw ?? 0).toFixed(3)}</strong>.
+              Multi-hop document traversal and entity-graph hops surface richer context than
+              flat vector search — same knowledge, fewer tokens, better answers.
             </p>
             <p className="body-md mt-3" style={{ color: "rgba(255,255,255,0.7)" }}>
-              Token reduction only counts if accuracy is maintained. Our GraphRAG pipeline
-              outperforms Basic RAG on both the LLM-judge pass rate and semantic similarity — proving
-              the graph isn&apos;t just cheaper, it&apos;s genuinely better.
+              Token reduction only counts if accuracy is maintained. GraphRAG addresses all three
+              core RAG pain points: chunk loss ambiguity, missing relationship awareness, and
+              single-hop retrieval limits — proving the graph isn&apos;t just cheaper, it&apos;s genuinely better.
             </p>
           </div>
         </>

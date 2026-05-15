@@ -486,6 +486,7 @@ export async function POST(req: NextRequest) {
       baseline: { avgF1: +(totalBaselineF1 / n).toFixed(4),  avgEM: +(totalBaselineEM / n).toFixed(4),  avgTokens: avgBT,                           avgCost: +(totalBaselineCost / n).toFixed(6),  avgLatency: Math.round(totalBaselineLatency / n) },
       graphrag: { avgF1: +(totalGraphragF1 / n).toFixed(4),  avgEM: +(totalGraphragEM / n).toFixed(4),  avgTokens: avgGT,                           avgCost: +(totalGraphragCost / n).toFixed(6),  avgLatency: Math.round(totalGraphragLatency / n) },
       tokenReductionVsBaseline: tokenReductionPct,
+      chunksSource: results.length > 0 ? (results[0].chunks_source as string) : "corpus",
       graphragF1WinRate: +(results.filter(r => (r.graphrag_f1 as number) >= (r.baseline_f1 as number)).length / n).toFixed(4),
       // Answer accuracy evaluation — required for 30% of hackathon score
       graphragJudgePassRate,
