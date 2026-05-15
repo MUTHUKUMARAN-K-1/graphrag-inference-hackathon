@@ -214,9 +214,11 @@ function buildLiveGraph(entities: string[], query: string): { nodes: LiveNode[];
 
   entities.slice(0, 8).forEach((e, i) => {
     const angle = (2 * Math.PI * i) / Math.min(entities.length, 8) - Math.PI / 2;
+    // Extract name only (before ": ") from "EntityName: description" format
+    const label = e.includes(": ") ? e.split(": ")[0].trim() : e.slice(0, 28);
     nodes.push({
       id: `e${i}`,
-      label: e.slice(0, 30),
+      label,
       x: Math.round(cx + r * Math.cos(angle)),
       y: Math.round(cy + r * Math.sin(angle)),
       hop: 1,
@@ -370,10 +372,18 @@ export function ExplorerContent() {
                 const dimmed = selectedNode && !isConnected;
                 const mx = (s.x + t.x) / 2;
                 const my = (s.y + t.y) / 2 - 10;
+                const dx = t.x - s.x, dy = t.y - s.y;
+                const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+                const sR = s.type === "QUERY" ? 26 : 20;
+                const tR = t.type === "QUERY" ? 26 : 20;
+                const x1e = s.x + (dx / dist) * sR;
+                const y1e = s.y + (dy / dist) * sR;
+                const x2e = t.x - (dx / dist) * (tR + 5);
+                const y2e = t.y - (dy / dist) * (tR + 5);
                 return (
                   <g key={`edge-${i}`} opacity={dimmed ? 0.12 : 1}>
                     <line
-                      x1={s.x} y1={s.y} x2={t.x} y2={t.y}
+                      x1={x1e} y1={y1e} x2={x2e} y2={y2e}
                       stroke={isConnected ? "#FF6B00" : "#d1cdc5"}
                       strokeWidth={isConnected ? 2.5 : 1.5}
                       markerEnd={isConnected ? "url(#arrow-hot)" : "url(#arrow)"}
@@ -654,8 +664,14 @@ export function ExplorerContent() {
                   const s = liveGraph.nodes.find(n => n.id === e.source);
                   const t = liveGraph.nodes.find(n => n.id === e.target);
                   if (!s || !t) return null;
+                  const ldx = t.x - s.x, ldy = t.y - s.y;
+                  const ldist = Math.sqrt(ldx * ldx + ldy * ldy) || 1;
+                  const lsR = s.id === "q" ? 26 : 20;
+                  const ltR = t.id === "q" ? 26 : 20;
                   return (
-                    <line key={i} x1={s.x} y1={s.y} x2={t.x} y2={t.y}
+                    <line key={i}
+                      x1={s.x + (ldx / ldist) * lsR} y1={s.y + (ldy / ldist) * lsR}
+                      x2={t.x - (ldx / ldist) * (ltR + 5)} y2={t.y - (ldy / ldist) * (ltR + 5)}
                       stroke="#FF6B00" strokeWidth="1.5" strokeOpacity={0.5}
                       markerEnd="url(#arrow-live)" />
                   );
