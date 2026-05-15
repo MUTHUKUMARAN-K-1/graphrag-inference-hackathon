@@ -62,18 +62,18 @@ function rescaleBertscore(raw: number): number {
 }
 
 // ── LLM-as-a-Judge ───────────────────────────────────────────────────────────
-// Always uses Mistral-7B via HuggingFace regardless of the generation model,
+// Always uses Groq Llama-3.3-70B regardless of the generation model,
 // to avoid self-grading bias when judge and generator are the same model.
 async function judgeAnswer(
   question: string, gold: string, answer: string,
   _provider: ProviderId, _model: string,
   _apiKeyOverride?: string, _baseURLOverride?: string,
 ): Promise<boolean> {
-  const judgeKey = process.env.HUGGING_FACE_HUB_TOKEN || process.env.HF_TOKEN;
+  const judgeKey = process.env.GROQ_API_KEY;
   try {
     const resp = await callLLM({
-      provider: "huggingface",
-      model: "mistralai/Mistral-7B-Instruct-v0.3",
+      provider: "groq",
+      model: "llama-3.3-70b-versatile",
       messages: [
         {
           role: "system",
