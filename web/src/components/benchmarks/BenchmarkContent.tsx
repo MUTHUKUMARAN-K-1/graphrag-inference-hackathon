@@ -37,21 +37,21 @@ const EMPTY_PIPE: PipelineStats = { avgF1: 0, avgEM: 0, avgTokens: 0, avgCost: 0
 
 const DEMO_DATA: AggregateData = {
   numSamples: 10,
-  llmOnly:  { avgF1: 0.7200, avgEM: 0.6000, avgTokens: 112,  avgCost: 0.000017, avgLatency: 820 },
-  baseline: { avgF1: 0.7800, avgEM: 0.6500, avgTokens: 1842, avgCost: 0.000277, avgLatency: 1480 },
-  graphrag: { avgF1: 0.8100, avgEM: 0.7000, avgTokens: 387,  avgCost: 0.000058, avgLatency: 980 },
-  graphragF1WinRate: 0.70,
-  tokenReductionVsBaseline: 79,
-  graphragJudgePassRate: 0.80,
-  baselineJudgePassRate: 0.70,
-  avgBertscoreRaw: 0.877,
-  avgBertscoreRescaled: 0.846,
-  bonusJudge: false,
+  llmOnly:  { avgF1: 1.0000, avgEM: 1.0000, avgTokens: 159,  avgCost: 0.000024, avgLatency: 820 },
+  baseline: { avgF1: 1.0000, avgEM: 1.0000, avgTokens: 902,  avgCost: 0.000136, avgLatency: 1480 },
+  graphrag: { avgF1: 0.9750, avgEM: 0.9000, avgTokens: 377,  avgCost: 0.000057, avgLatency: 980 },
+  graphragF1WinRate: 0.90,
+  tokenReductionVsBaseline: 58,
+  graphragJudgePassRate: 1.00,
+  baselineJudgePassRate: 1.00,
+  avgBertscoreRaw: 0.9304,
+  avgBertscoreRescaled: 0.9130,
+  bonusJudge: true,
   bonusBertscore: true,
   bertscoreAvailable: true,
   byType: {
-    bridge: { count: 5, baselineF1: 0.7400, graphragF1: 0.8200 },
-    comparison: { count: 5, baselineF1: 0.8200, graphragF1: 0.8000 },
+    bridge: { count: 5, baselineF1: 0.9800, graphragF1: 0.9600 },
+    comparison: { count: 5, baselineF1: 1.0000, graphragF1: 0.9900 },
   },
 };
 
