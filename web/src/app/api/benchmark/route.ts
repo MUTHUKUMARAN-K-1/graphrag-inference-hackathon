@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { callLLM, PROVIDERS, type ProviderId } from "@/lib/llm-providers";
-import { getEmbedding, searchChunks, chunkToEntityContext } from "@/lib/retrieval";
+import { getEmbedding, searchChunks, chunkToEntityContext, getDocumentChunks, extractEntityNames, type TGDocChunk } from "@/lib/retrieval";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -312,12 +312,44 @@ export async function POST(req: NextRequest) {
           if (chunks.length > 0) {
             // Basic RAG: all 5 passages as full text
             ragContext = chunks.map((c, j) => `[Passage ${j + 1}]\n${c.text}`).join("\n\n");
-            // GraphRAG: top chunk only, in "EntityName: description" format so the
-            // prompt can reliably extract the concept name before the colon.
-            // If extraction failed (no colon), keep the pre-loaded compact context.
-            const tgGraphCtx = chunkToEntityContext(chunks[0].text);
-            if (tgGraphCtx.includes(": ")) graphContext = tgGraphCtx;
             chunksSource = "tigergraph";
+
+            // ── Pain-point fixes ───────────────────────────────────────────
+            // 1. Relationship awareness: extract entity names → secondary search
+            const entityNames = extractEntityNames(chunks[0].text);
+            const entityQuery = entityNames.join(" ");
+
+            // 2. Multi-hop: sibling chunks from same doc + entity-linked chunks (parallel)
+            const [siblings, entityEmbed] = await Promise.all([
+              getDocumentChunks(chunks[0].chunk_id, 4).catch(() => [] as TGDocChunk[]),
+              entityQuery ? getEmbedding(entityQuery).catch(() => null) : Promise.resolve(null),
+            ]);
+            const entityChunks = entityEmbed
+              ? await searchChunks(entityEmbed, 3).catch(() => [])
+              : [];
+
+            // 3. Chunk loss fix: merge primary + siblings + entity-linked, deduplicate
+            const seen = new Set<string>();
+            const allSources: Array<{ chunk_id: string; text: string }> = [
+              ...chunks,
+              ...siblings.map(s => ({ chunk_id: s.chunk_id, text: s.text, score: 0 })),
+              ...entityChunks,
+            ];
+            const uniqueChunks = allSources.filter(
+              c => !seen.has(c.chunk_id) && seen.add(c.chunk_id)
+            );
+
+            // Build multi-entry KG context (up to 6 "ConceptName: description" lines)
+            const kgLines = uniqueChunks
+              .slice(0, 6)
+              .map(c => chunkToEntityContext(c.text))
+              .filter(l => l.includes(": "));
+            if (kgLines.length > 0) {
+              graphContext = kgLines.join("\n");
+            } else {
+              const fallback = chunkToEntityContext(chunks[0].text);
+              if (fallback.includes(": ")) graphContext = fallback;
+            }
           }
         }
       } catch { /* use pre-loaded context */ }
@@ -336,7 +368,7 @@ export async function POST(req: NextRequest) {
         callLLM({
           provider, model: selectedModel,
           messages: [
-            { role: "system", content: "Science quiz. The knowledge graph entry is in 'ConceptName: description' format. Output ONLY the ConceptName — the exact text before the colon. Nothing else." },
+            { role: "system", content: "Science quiz. The knowledge graph has entries in 'ConceptName: description' format. Find the entry that best answers the question and output ONLY its ConceptName — the exact text before the colon. Nothing else." },
             { role: "user", content: `Knowledge graph:\n${graphContext}\n\nQuestion: ${sample.question}\nConceptName:` },
           ],
           temperature: 0, maxTokens: 512,
