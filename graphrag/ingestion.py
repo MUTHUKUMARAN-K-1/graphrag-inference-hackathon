@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 # Optional JSON repair — graceful degradation if not installed
 try:
-    from json_repair import repair_json as _repair_json
+    from json_repair import repair_json as _repair_json  # type: ignore[import]
     _HAS_JSON_REPAIR = True
 except ImportError:
     _HAS_JSON_REPAIR = False
@@ -123,7 +123,7 @@ class IngestionPipeline:
 
     def ingest_hotpotqa(self, max_docs=100, split="validation", extract_entities=True):
         """Ingest HotpotQA documents into the graph."""
-        from datasets import load_dataset
+        from datasets import load_dataset  # type: ignore[import]
         logger.info("Loading HotpotQA (%s, max=%d)...", split, max_docs)
         ds = load_dataset("hotpotqa/hotpot_qa", "distractor", split=split)
         ingested, seen = 0, set()
