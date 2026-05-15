@@ -243,17 +243,90 @@ export function ArchitectureContent() {
           </div>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             {[
-              { name: "TigerGraph", role: "Graph Database", icon: "🔶" },
-              { name: "Claude", role: "Primary LLM", icon: "🤖" },
-              { name: "Python", role: "Backend", icon: "🐍" },
-              { name: "Next.js", role: "Frontend", icon: "⚡" },
-              { name: "Recharts", role: "Visualizations", icon: "📊" },
-              { name: "Docker", role: "Deployment", icon: "🐳" },
-              { name: "RAGAS", role: "Evaluation", icon: "📋" },
-              { name: "Wikipedia Science", role: "Benchmark Data", icon: "📚" },
+              {
+                name: "TigerGraph",
+                role: "Graph Database",
+                logoUrl: "/tg-logo.webp",
+                bg: "#FFF5EC",
+                accent: "#FF6B00",
+                rounded: true,
+              },
+              {
+                name: "Anthropic",
+                role: "LLM Provider",
+                logoUrl: "https://cdn.simpleicons.org/anthropic/191919",
+                bg: "#F5F4F0",
+                accent: "#191919",
+                rounded: false,
+              },
+              {
+                name: "Google Gemini",
+                role: "Generation Model",
+                logoUrl: "https://cdn.simpleicons.org/googlegemini/4285F4",
+                bg: "#EEF4FF",
+                accent: "#4285F4",
+                rounded: false,
+              },
+              {
+                name: "Groq",
+                role: "Independent Judge",
+                logoUrl: "/groq.png",
+                bg: "#F0FBF8",
+                accent: "#F55036",
+                rounded: true,
+              },
+              {
+                name: "Python",
+                role: "Backend",
+                logoUrl: "https://cdn.simpleicons.org/python/3776AB",
+                bg: "#EEF6FF",
+                accent: "#3776AB",
+                rounded: false,
+              },
+              {
+                name: "Next.js",
+                role: "Frontend",
+                logoUrl: "https://cdn.simpleicons.org/nextdotjs/000000",
+                bg: "#F0F0F0",
+                accent: "#000000",
+                rounded: false,
+              },
+              {
+                name: "HuggingFace",
+                role: "Embeddings",
+                logoUrl: "https://cdn.simpleicons.org/huggingface/FFD21E",
+                bg: "#FFFBEB",
+                accent: "#F0A500",
+                rounded: false,
+              },
+              {
+                name: "Vercel",
+                role: "Hosting",
+                logoUrl: "https://cdn.simpleicons.org/vercel/000000",
+                bg: "#F0F0F0",
+                accent: "#000000",
+                rounded: false,
+              },
             ].map((tech, i) => (
               <div key={i} className="card card-hover text-center" style={{ padding: "28px 16px" }}>
-                <div style={{ fontSize: "2rem", marginBottom: "8px" }}>{tech.icon}</div>
+                <div style={{
+                  width: "56px", height: "56px",
+                  borderRadius: tech.rounded ? "12px" : "14px",
+                  background: tech.bg,
+                  border: `1px solid ${tech.accent}22`,
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  margin: "0 auto 12px",
+                  overflow: "hidden",
+                }}>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={tech.logoUrl}
+                    alt={tech.name}
+                    width={32}
+                    height={32}
+                    style={{ objectFit: "contain", display: "block" }}
+                  />
+                </div>
                 <div className="title-sm">{tech.name}</div>
                 <div className="caption" style={{ marginTop: "2px" }}>{tech.role}</div>
               </div>
