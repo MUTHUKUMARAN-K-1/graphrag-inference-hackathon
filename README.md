@@ -91,11 +91,7 @@ At 10M queries/month: ~$790,000/month saved — the graph indexing cost is paid 
 
 ### Benchmark Pipeline — Live Run
 
-<video src="demo/benchmark.mp4" controls width="100%">
-  <a href="demo/benchmark.mp4">▶ Watch benchmark demo (MP4, 3.8 MB)</a>
-</video>
-
-**[▶ Watch Demo Video](demo/benchmark.mp4)**
+**[▶ Watch Demo Video](https://drive.google.com/file/d/12_42hmLsvROHFp563L8s4U9j3r5DI9DD/view?usp=sharing)**
 
 > All 10 Wikipedia science questions evaluated simultaneously — LLM-Only, Basic RAG, and GraphRAG pipelines running in parallel. Shows LLM-as-a-Judge PASS/FAIL, BERTScore, token reduction, and cost comparison in real time.
 
