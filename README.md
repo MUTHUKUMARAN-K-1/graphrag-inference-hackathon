@@ -217,6 +217,20 @@ All three sources are deduplicated and merged into up to 6 KG context lines fed 
 
 ---
 
+## ✅ Path B Compliance
+
+This project follows **Path B (Customize)** — extending the official TigerGraph GraphRAG service with custom logic, schema extensions, and novel retrieval techniques.
+
+| Path B Requirement | Status | Evidence |
+|---|---|---|
+| **Deploy the repo** | ✅ | `tg_graphrag_client.py` wraps the official TG GraphRAG service; REST API + pyTigerGraph fallback |
+| **Extend the schema** | ✅ | Added `getDocumentChunks` + `entityHopChunks` GSQL v2 queries; `Entity`, `MENTIONS`, `RELATED_TO` edges |
+| **Add own logic on top** | ✅ | 14 novel techniques: PPR, Spreading Activation, Token Budget, PolyG Router, etc. via `NoveltyEngine` |
+| **Modify prompt templates** | ✅ | Custom GraphRAG system prompt in `benchmark/route.ts` with multi-entry KG context format |
+| **Tune top_k / num_hops** | ✅ | `top_k=5`, 2-hop traversal configured in retrieval pipeline |
+
+---
+
 ## 📚 Dataset
 
 ### Requirements
